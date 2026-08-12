@@ -9,7 +9,7 @@
 import { createInterface } from 'node:readline/promises';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import ecosystemConfig from '../deploy/ecosystem.config.js';
 
@@ -98,9 +98,80 @@ function checkScriptPath(appName) {
   return true;
 }
 
+// Minimal KEY=VALUE parser -- good enough to check a few required
+// variables are non-empty, not a full .env implementation (this never
+// loads the values into process.env; each app loads its own via
+// --env-file when pm2 actually starts it).
+function readEnvFile(envPath) {
+  try {
+    const content = readFileSync(envPath, 'utf8');
+    const vars = {};
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+    }
+    return vars;
+  } catch {
+    return null;
+  }
+}
+
+function checkRequiredEnv(envPath, requiredKeys, label) {
+  const vars = readEnvFile(envPath);
+  if (!vars) {
+    console.error(`Skipping ${label}: no .env found at ${envPath}. Copy the matching .env.example and fill it in.`);
+    return false;
+  }
+  const missing = requiredKeys.filter((key) => !vars[key]);
+  if (missing.length > 0) {
+    console.error(`Skipping ${label}: ${envPath} is missing ${missing.join(', ')}.`);
+    return false;
+  }
+  return true;
+}
+
+// Warning only, not a hard block -- the PalWorldSettings.ini location is
+// inferred by the standard dedicated-server layout relative to the
+// palworld app's own cwd, which may not match every setup, so a miss here
+// shouldn't stop a deploy that's otherwise fine.
+function checkPalworldRestApi() {
+  const app = ecosystemConfig.apps.find((a) => a.name === 'palworld');
+  if (!app || app.script.includes(EXAMPLE_PATH_MARKER)) return;
+
+  const iniPath = path.join(app.cwd, 'Pal', 'Saved', 'Config', 'LinuxServer', 'PalWorldSettings.ini');
+  if (!existsSync(iniPath)) {
+    console.warn(`Note: couldn't find PalWorldSettings.ini at ${iniPath} to check RESTAPIEnabled -- skipping that check.`);
+    return;
+  }
+  const content = readFileSync(iniPath, 'utf8');
+  if (!/RESTAPIEnabled=True/i.test(content)) {
+    console.warn(`Warning: RESTAPIEnabled doesn't look like it's set to True in ${iniPath} -- the bot/agent won't be able to reach this server's REST API until it is.`);
+  }
+}
+
+// Each app gets its own config gate, run right before it's actually
+// started/restarted -- consistent with checkScriptPath's "skip with a
+// clear message" pattern rather than a confusing failure downstream.
+function checkAppConfig(appName) {
+  if (appName === 'palworld-bot') {
+    return checkRequiredEnv(path.join(repoRoot, '.env'), ['DISCORD_TOKEN', 'WEB_HOST', 'WEB_PORT'], 'palworld-bot');
+  }
+  if (appName === 'palworld-agent') {
+    return checkRequiredEnv(path.join(repoRoot, 'agent', '.env'), ['BOT_WS_URL'], 'palworld-agent');
+  }
+  if (appName === 'palworld') {
+    checkPalworldRestApi();
+  }
+  return true;
+}
+
 let deployedCount = 0;
 for (const app of selected) {
   if (!checkScriptPath(app.name)) continue;
+  if (!checkAppConfig(app.name)) continue;
 
   if (isRunning(app.name)) {
     console.log(`${app.name} already running -- restarting in place`);

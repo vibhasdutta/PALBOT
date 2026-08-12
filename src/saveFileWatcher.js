@@ -49,7 +49,7 @@ function createSaveFileWatcher({ getServers, statSync = fs.statSync, expectedAct
       const previous = known.get(key);
       const isFirstPoll = previous === undefined;
       if (!isFirstPoll && mtimeMs > previous && !expectedActions.wasExpected(`save:${key}`)) {
-        notify.serverLog(server.guildId, {
+        notify.serverLog(server, {
           event: 'server.save',
           server: server.label,
           trigger: 'autosave_or_ingame',

@@ -1,16 +1,17 @@
-// Live status dashboard: one auto-updating channel per guild, holding a
-// status+players message pair for every server that guild owns (edited in
-// place on a fixed interval, not reposted), plus a channel name showing how
-// many of the guild's servers are currently online. If no channel is
-// configured yet, or a configured channel/message has been deleted, one is
-// (re)created automatically and the new ID is written back to
-// config/servers.json -- the human only ever has to *edit* that file
-// afterward to point at a different existing channel.
+// Live status dashboard: one auto-updating channel per statusChannelId,
+// holding a status+players message pair for every server that shares it
+// (edited in place on a fixed interval, not reposted), plus a channel name
+// showing how many of that channel's servers are currently online. Servers
+// with no statusChannelId assigned each get their own channel. If a
+// configured channel/message has been deleted, one is (re)created
+// automatically and the new ID is written back to config/servers.json --
+// the human only ever has to *edit* that file afterward to point at a
+// different existing channel.
 const fs = require('node:fs');
 const path = require('node:path');
 const { EmbedBuilder, ChannelType } = require('discord.js');
 const pm2 = require('pm2');
-const { mutateGuildEntry } = require('./config');
+const { mutateServerEntry } = require('./config');
 const { readWorldSettings } = require('./worldSettingsParser');
 const { cleanPlayerId } = require('./playerPoller');
 
@@ -127,7 +128,7 @@ function createStatusChannelManager({
   getPm2Status = defaultGetPm2Status,
   intervalMs = 10000,
 }) {
-  const lastChannelName = new Map(); // guildId -> last name we set/observed
+  const lastChannelName = new Map(); // `${guildId}:${channelKey}` -> last name we set/observed
 
   function getEntry(guildId, label) {
     return readState(statePath).find((e) => e.guildId === guildId && e.label === label) || null;
@@ -145,14 +146,14 @@ function createStatusChannelManager({
   }
 
   // Configured channel missing, deleted, or never set -- (re)create one and
-  // persist the new ID so config/servers.json stays the source of truth the
-  // human can hand-edit afterward.
-  async function resolveGuildChannel(group, initialName) {
-    const guild = client.guilds.cache.get(group.guildId);
+  // persist the new ID onto every server in this group via
+  // mutateServerEntry so config/servers.json stays the source of truth.
+  async function resolveChannel(guildId, channelId, servers, initialName) {
+    const guild = client.guilds.cache.get(guildId);
     if (!guild) return null;
 
-    if (group.statusChannelId) {
-      const existing = await guild.channels.fetch(group.statusChannelId).catch(() => null);
+    if (channelId) {
+      const existing = await guild.channels.fetch(channelId).catch(() => null);
       if (existing) return existing;
     }
 
@@ -161,12 +162,14 @@ function createStatusChannelManager({
       type: ChannelType.GuildText,
       reason: 'Palworld live status channel',
     }).catch((err) => {
-      console.error(`statusChannel: failed to create status channel in guild ${group.guildId}:`, err.message);
+      console.error(`statusChannel: failed to create status channel in guild ${guildId}:`, err.message);
       return null;
     });
     if (!created) return null;
 
-    mutateGuildEntry(serversPath, group.guildId, (entry) => { entry.statusChannelId = created.id; });
+    for (const server of servers) {
+      mutateServerEntry(serversPath, guildId, server.label, (entry) => { entry.statusChannelId = created.id; });
+    }
     return created;
   }
 
@@ -186,11 +189,13 @@ function createStatusChannelManager({
     return msg;
   }
 
-  async function tickGuild(group) {
-    if (group.servers.length === 0) return;
-
+  // One channel's worth of servers: build every server's status/players
+  // payload, resolve or create the channel, edit/send each server's
+  // message pair, then rename the channel to reflect this group's own
+  // online-count/total (not the whole guild's).
+  async function tickChannelGroup(guildId, channelKey, servers) {
     const results = [];
-    for (const server of group.servers) {
+    for (const server of servers) {
       const palworld = createClient({ baseUrl: server.restApiUrl, password: server.restApiPassword });
       const pm2Status = await getPm2Status(server.pm2ProcessName);
       const displayName = getServerDisplayName(server);
@@ -201,22 +206,43 @@ function createStatusChannelManager({
 
     const onlineCount = results.filter((r) => r.state === 'online').length;
     const desiredName = guildChannelNameFor(onlineCount, results.length);
+    const currentChannelId = servers[0].statusChannelId; // every server in this group shares the same value (or all null)
 
-    const channel = await resolveGuildChannel(group, desiredName);
+    const channel = await resolveChannel(guildId, currentChannelId, servers, desiredName);
     if (!channel) return;
 
     for (const r of results) {
-      const statusMsg = await resolveMessage(channel, group.guildId, r.server.label, 'statusMessageId');
+      const statusMsg = await resolveMessage(channel, guildId, r.server.label, 'statusMessageId');
       if (statusMsg) await statusMsg.edit({ content: '', embeds: [r.statusEmbed] }).catch(() => {});
 
-      const playersMsg = await resolveMessage(channel, group.guildId, r.server.label, 'playersMessageId');
+      const playersMsg = await resolveMessage(channel, guildId, r.server.label, 'playersMessageId');
       if (playersMsg) await playersMsg.edit({ content: '', embeds: [r.playersEmbed] }).catch(() => {});
     }
 
-    if (lastChannelName.get(group.guildId) !== desiredName && channel.name !== desiredName) {
-      await channel.setName(desiredName).catch((err) => console.error(`statusChannel: failed to rename channel for guild ${group.guildId}:`, err.message));
+    const trackKey = `${guildId}:${channelKey}`;
+    if (lastChannelName.get(trackKey) !== desiredName && channel.name !== desiredName) {
+      await channel.setName(desiredName).catch((err) => console.error(`statusChannel: failed to rename channel for guild ${guildId}:`, err.message));
     }
-    lastChannelName.set(group.guildId, desiredName);
+    lastChannelName.set(trackKey, desiredName);
+  }
+
+  async function tickGuild(group) {
+    if (group.servers.length === 0) return;
+
+    // Servers sharing a statusChannelId render together in one channel
+    // (today's behavior, if configured that way). A server with no channel
+    // assigned yet (null) gets its own -- never silently lumped in with
+    // other unassigned servers, since that grouping would be arbitrary.
+    const byChannel = new Map();
+    for (const server of group.servers) {
+      const key = server.statusChannelId || `__new__:${server.label}`;
+      if (!byChannel.has(key)) byChannel.set(key, []);
+      byChannel.get(key).push(server);
+    }
+
+    for (const [key, servers] of byChannel) {
+      await tickChannelGroup(group.guildId, key, servers);
+    }
   }
 
   async function tick() {

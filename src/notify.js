@@ -170,14 +170,18 @@ async function postToChannel(client, channelId, entry) {
   }
 }
 
-// One shared logs channel per guild -- bot events and server events both
-// land in the same place, per explicit feedback that the earlier separate
-// bot-log/server-log channel split wasn't needed. botLog/serverLog stay as
-// two methods (most call sites already use whichever fits semantically) but
-// both resolve to the same channel via `getLogChannelId(guildId)`.
-function createNotifier(client, getLogChannelId) {
-  const log = (guildId, entry) => postToChannel(client, getLogChannelId(guildId), entry);
-  return { botLog: log, serverLog: log };
+// botLog resolves a bot-wide events channel from the guild (process
+// restarted, pre-server-resolution access denials, /operator grants).
+// serverLog resolves straight from the server object's own logChannelId --
+// no guild-level lookup, no automatic migration -- a server with
+// logChannelId: null just never logs anywhere until someone sets it
+// (postToChannel's `if (!channelId) return;` guard above already covers
+// that no-op, no new code needed here).
+function createNotifier(client, getBotLogChannelId) {
+  return {
+    botLog: (guildId, entry) => postToChannel(client, getBotLogChannelId(guildId), entry),
+    serverLog: (server, entry) => postToChannel(client, server?.logChannelId, entry),
+  };
 }
 
 module.exports = {

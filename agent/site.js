@@ -1,7 +1,33 @@
+const crypto = require('node:crypto');
 const express = require('express');
 const { ensureState, listServers, addServer, updateServer, removeServer } = require('./state');
 
-const DEFAULT_PORT = process.env.AGENT_SITE_PORT || 4300;
+const DEFAULT_PORT = 4300;
+const DEFAULT_HOST = '127.0.0.1';
+
+function timingSafeEqual(a, b) {
+  const bufA = Buffer.from(String(a ?? ''));
+  const bufB = Buffer.from(String(b ?? ''));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// HTTP Basic Auth -- the browser's own native login prompt, no custom
+// login page or session/cookie machinery needed for a small admin tool.
+// Only active when a password is actually configured.
+function basicAuthMiddleware(password) {
+  return (req, res, next) => {
+    const auth = req.headers.authorization || '';
+    const [scheme, encoded] = auth.split(' ');
+    if (scheme === 'Basic' && encoded) {
+      const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+      const suppliedPassword = decoded.slice(decoded.indexOf(':') + 1);
+      if (timingSafeEqual(suppliedPassword, password)) return next();
+    }
+    res.set('WWW-Authenticate', 'Basic realm="Palworld Bot Agent"');
+    res.status(401).send('Authentication required.');
+  };
+}
 
 function renderPage(body) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Palworld Bot Agent</title>
@@ -13,10 +39,19 @@ input{width:100%;padding:.4rem;margin:.2rem 0;box-sizing:border-box}button{paddi
 }
 
 // Always running while the agent is up, not just a first-run wizard --
-// owners revisit this anytime at http://localhost:<port> to add/remove
+// owners revisit this anytime at http://<host>:<port> to add/remove
 // servers or re-copy the pairing info.
-function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT }) {
+function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT, host = DEFAULT_HOST, password }) {
+  const isLocalOnly = host === '127.0.0.1' || host === 'localhost';
+  if (!isLocalOnly && !password) {
+    // Refuse to start rather than silently serve an unauthenticated admin
+    // panel (REST passwords, add/remove servers) on a reachable-from-
+    // outside address. This is the whole reason a password exists at all.
+    throw new Error(`Refusing to bind the agent site to ${host} without AGENT_SITE_PASSWORD set -- that would be reachable with no login. Set AGENT_SITE_PASSWORD in agent/.env, or leave AGENT_SITE_HOST unset to stay on 127.0.0.1.`);
+  }
+
   const app = express();
+  if (password) app.use(basicAuthMiddleware(password));
   app.use(express.urlencoded({ extended: true }));
 
   app.get('/', (req, res) => {
@@ -85,14 +120,15 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT 
     res.redirect('/');
   });
 
-  // ponytail: bind the literal 127.0.0.1 address, not the 'localhost'
-  // hostname -- on Windows, resolving 'localhost' can prefer ::1 (IPv6)
-  // while a client's fetch resolves it to 127.0.0.1 (or vice versa),
-  // leaving the two sides trying to reach different addresses and hanging
-  // instead of erroring. The literal address sidesteps resolution entirely.
-  return app.listen(port, '127.0.0.1', () => {
+  // ponytail: for the default 127.0.0.1 case specifically, the literal
+  // address is used rather than the 'localhost' hostname -- on Windows,
+  // resolving 'localhost' can prefer ::1 (IPv6) while a client's fetch
+  // resolves it to 127.0.0.1 (or vice versa), leaving the two sides trying
+  // to reach different addresses and hanging instead of erroring. A
+  // caller-supplied host (0.0.0.0, a public IP, etc.) is used as given.
+  return app.listen(port, host, () => {
     const actualPort = typeof port === 'number' && port !== 0 ? port : undefined;
-    if (actualPort) console.log(`agent: local site at http://127.0.0.1:${actualPort}`);
+    if (actualPort) console.log(`agent: local site at http://${host}:${actualPort}${password ? ' (password required)' : ''}`);
   });
 }
 

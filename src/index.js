@@ -59,13 +59,14 @@ const client = new Client({
   }),
 });
 
-const notify = createNotifier(client, (guildId) => config.servers.find((s) => s.guildId === guildId)?.logChannelId || null);
+const notify = createNotifier(client, (guildId) => config.servers.find((s) => s.guildId === guildId)?.botLogChannelId || null);
 const expectedActions = createExpectedActions();
 
 const auditLog = {
   appendAuditEntry: (entry) => {
     const saved = appendAuditEntry(config.auditLogPath, entry);
-    if (entry.guildId) notify.serverLog(entry.guildId, formatAuditEntry(entry)).catch(() => {});
+    if (entry.server) notify.serverLog(entry.server, formatAuditEntry(entry)).catch(() => {});
+    else if (entry.guildId) notify.botLog(entry.guildId, formatAuditEntry(entry)).catch(() => {});
     return saved;
   },
 };
@@ -81,6 +82,15 @@ const baseCtx = { config, auditLog, webServer };
 // `errorMessage` explains which case it was so the user isn't just told "no".
 function resolveServerCtx(guildId, label) {
   const server = findGuildServer(config.servers, guildId, label);
+  // Stamps `server` onto every entry before it reaches the real audit log,
+  // so module-scope auditLog.appendAuditEntry above can route it to
+  // notify.serverLog instead of notify.botLog -- command handlers keep
+  // calling ctx.auditLog.appendAuditEntry({guildId, ...}) exactly as they
+  // do today, unaware this wrapper exists.
+  const scopedAuditLog = server ? {
+    appendAuditEntry: (entry) => auditLog.appendAuditEntry({ ...entry, server }),
+  } : null;
+
   if (server) {
     // Agent-routed: the server lives on its owner's own host. No
     // expectedActions wrapping needed here -- pm2Watcher only ever
@@ -90,6 +100,7 @@ function resolveServerCtx(guildId, label) {
       return {
         ctx: {
           ...baseCtx,
+          auditLog: scopedAuditLog,
           server,
           palworld: createAgentPalworldClient({ agentRegistry, agentId: server.agentId, serverId: server.serverId }),
           processControl: {
@@ -105,6 +116,7 @@ function resolveServerCtx(guildId, label) {
     return {
       ctx: {
         ...baseCtx,
+        auditLog: scopedAuditLog,
         server,
         palworld: {
           ...rawPalworld,
@@ -150,7 +162,7 @@ async function ensureLogChannel(guildId) {
   if (!guild) return;
   try {
     const created = await guild.channels.create({ name: 'palworld-logs', type: ChannelType.GuildText, reason: 'Palworld bot log channel' });
-    mutateGuildEntry(config.serversPath, guildId, (entry) => { entry.logChannelId = created.id; });
+    mutateGuildEntry(config.serversPath, guildId, (entry) => { entry.botLogChannelId = created.id; });
     config.servers = loadServersFile(config.serversPath);
   } catch (err) {
     console.error(`Failed to create log channel for guild ${guildId}:`, err.message);
@@ -210,14 +222,13 @@ watchConfigFiles();
 // through the bot -- Discord never sees those otherwise. expectedActions
 // filters out the bot's own pm2 calls (already reported via the normal
 // command/audit-log flow) so only genuinely-external actions get flagged.
-// Returns {guildId, label} pairs -- the friendly label (e.g. "main") from
-// that guild's own servers.json entry, not just the raw pm2 process name,
-// so the notification properly identifies which configured server it was.
+// Returns full server objects (with guildId attached) so callers can pass
+// one straight to notify.serverLog -- not just {guildId, label}.
 function findOwningGuildServers(processName) {
   const owners = [];
   for (const entry of config.servers) {
     for (const server of entry.servers) {
-      if (server.pm2ProcessName === processName) owners.push({ guildId: entry.guildId, label: server.label });
+      if (server.pm2ProcessName === processName) owners.push({ ...server, guildId: entry.guildId });
     }
   }
   return owners;
@@ -243,16 +254,16 @@ watchPm2({
       return;
     }
 
-    for (const { guildId, label } of findOwningGuildServers(processName)) {
+    for (const server of findOwningGuildServers(processName)) {
       const message = {
         event: 'pm2.external_action',
-        server: label,
+        server: server.label,
         process: processName,
         status: verb,
         level: 'warning',
-        msg: `Server ${label} (pm2: ${processName}) was ${verb} externally via pm2`,
+        msg: `Server ${server.label} (pm2: ${processName}) was ${verb} externally via pm2`,
       };
-      notify.serverLog(guildId, message).catch(() => {});
+      notify.serverLog(server, message).catch(() => {});
     }
   },
 });
@@ -292,7 +303,6 @@ const statusChannelManager = createStatusChannelManager({
   client,
   getGuildGroups: () => config.servers.map((entry) => ({
     guildId: entry.guildId,
-    statusChannelId: entry.statusChannelId,
     // Same exclusion as playerPoller above.
     servers: findGuildServers(config.servers, entry.guildId).filter((s) => !s.agentId).map((s) => ({ ...s, ...resolveServerConnection(s) })),
   })),

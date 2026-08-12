@@ -68,6 +68,13 @@ function normalizeServer(server) {
     agentId: server.agentId || null,
     serverId: server.serverId || null,
     tierGrants: server.tierGrants || null,
+    // Set by statusChannel.js/notify.js. null means "not assigned yet" --
+    // statusChannelId: null auto-creates a dedicated channel on this
+    // server's first status tick; logChannelId: null means this server's
+    // events are silently dropped (postToChannel no-ops on a falsy ID)
+    // until someone sets it, matching "no automatic migration."
+    statusChannelId: server.statusChannelId || null,
+    logChannelId: server.logChannelId || null,
   };
 }
 
@@ -80,9 +87,10 @@ function loadServersFile(serversPath) {
     // resulting ID back here via mutateGuildEntry -- the human only ever
     // needs to *edit* this to point at a different existing channel.
     statusChannelId: entry.statusChannelId || null,
-    // One shared logs channel per guild (bot + server events both go here --
-    // no separate bot/server split), hand-set by editing this file directly.
-    logChannelId: entry.logChannelId || null,
+    // Bot-wide events only (process restarted, pre-server-resolution access
+    // denials, /operator grants) -- per-server events use each server's own
+    // logChannelId instead. Hand-set by editing this file directly.
+    botLogChannelId: entry.botLogChannelId || null,
     servers: Array.isArray(entry.servers) ? entry.servers.map(normalizeServer) : [],
   }));
 }
@@ -192,7 +200,7 @@ function ensureGuildEntry(guildsPath, rolesPath, serversPath, guildId) {
   ]);
 
   const servers = readJsonArray(serversPath);
-  writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, logChannelId: null, servers: [] }]);
+  writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, botLogChannelId: null, servers: [] }]);
 
   return true;
 }
@@ -226,6 +234,22 @@ function mutateGuildEntry(serversPath, guildId, mutate) {
   mutate(entry);
   writeJsonArray(serversPath, servers);
   return entry;
+}
+
+// Same idea as mutateGuildEntry, but reaches one level deeper into a
+// specific server within a specific guild's `servers` array. Used by
+// statusChannel.js to persist an auto-created channel ID onto the right
+// server instead of the guild. Requires both the guild and the server
+// (by label) to already exist.
+function mutateServerEntry(serversPath, guildId, label, mutate) {
+  const servers = readJsonArray(serversPath);
+  const entry = servers.find((s) => s.guildId === guildId);
+  if (!entry) return null;
+  const server = entry.servers.find((s) => s.label === label);
+  if (!server) return null;
+  mutate(server);
+  writeJsonArray(serversPath, servers);
+  return server;
 }
 
 function loadConfig(env = process.env) {
@@ -263,4 +287,5 @@ module.exports = {
   ensureGuildEntry,
   mutateGuildRoles,
   mutateGuildEntry,
+  mutateServerEntry,
 };

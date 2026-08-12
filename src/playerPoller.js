@@ -93,7 +93,7 @@ function createPlayerPoller({ getServers, createClient, notify, intervalMs = 200
         current.set(pKey, playerObj);
 
         if (!isFirstPoll && !matchedPrevKey) {
-          notify.serverLog(server.guildId, {
+          notify.serverLog(server, {
             event: 'player.join',
             server: server.label,
             player: p.name,
@@ -117,7 +117,7 @@ function createPlayerPoller({ getServers, createClient, notify, intervalMs = 200
 
           if (!foundInCurrent) {
             const leaveId = prevObj.displayId;
-            notify.serverLog(server.guildId, {
+            notify.serverLog(server, {
               event: 'player.leave',
               server: server.label,
               player: prevObj.name,
