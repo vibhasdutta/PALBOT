@@ -3,15 +3,15 @@
 # of the bot's web server. Run on the VM after the bot's .env is set.
 #
 # Usage:
-#   bash scripts/setup-caddy.sh yourname.duckdns.org
+#   bash scripts/setup-caddy.sh yourname.duckdns.org [--force]
 #
 # What it does:
-#   1. Installs Caddy (if not already installed)
-#   2. Writes /etc/caddy/Caddyfile to reverse-proxy to localhost:WEB_PORT
-#   3. Opens firewall ports 80 + 443 (ufw)
-#   4. Restarts Caddy
-#   5. Updates the bot's .env WEB_HOST to the domain
-#   6. Prints the agent BOT_WS_URL and Discord OAuth redirect to configure
+#   1. Checks if setup is already complete (skips unless --force / -f is passed)
+#   2. Installs Caddy (if not already installed)
+#   3. Writes /etc/caddy/Caddyfile to reverse-proxy to localhost:WEB_PORT
+#   4. Opens firewall ports 80 + 443 (ufw)
+#   5. Restarts Caddy
+#   6. Updates the bot's .env WEB_HOST to the domain
 #
 # Prerequisites:
 #   - A DNS record pointing the domain at this VM's public IP
@@ -20,7 +20,22 @@
 
 set -euo pipefail
 
-DOMAIN="${1:-}"
+DOMAIN=""
+FORCE=false
+
+for arg in "$@"; do
+  case "$arg" in
+    -f|--force)
+      FORCE=true
+      ;;
+    *)
+      if [ -z "$DOMAIN" ]; then
+        DOMAIN="$arg"
+      fi
+      ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$BOT_DIR/.env"
@@ -29,7 +44,7 @@ ENV_FILE="$BOT_DIR/.env"
 
 if [ -z "$DOMAIN" ]; then
   echo ""
-  echo "Usage: bash scripts/setup-caddy.sh <domain>"
+  echo "Usage: bash scripts/setup-caddy.sh <domain> [--force]"
   echo ""
   echo "Example with DuckDNS (free, 2 minutes):"
   echo "  1. Go to https://www.duckdns.org, sign in with Discord"
@@ -47,6 +62,23 @@ fi
 # Read WEB_PORT from .env (default 8090)
 WEB_PORT=$(grep -E '^WEB_PORT=' "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]')
 WEB_PORT="${WEB_PORT:-8090}"
+
+# Read current WEB_HOST from .env
+CURRENT_WEB_HOST=$(grep -E '^WEB_HOST=' "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]' || true)
+
+# --- Check if setup is already done ---
+
+if [ "$FORCE" = false ] && [ "$CURRENT_WEB_HOST" = "$DOMAIN" ] && [ -f /etc/caddy/Caddyfile ] && grep -q "$DOMAIN" /etc/caddy/Caddyfile 2>/dev/null; then
+  echo ""
+  echo "[✓] Caddy setup for domain '$DOMAIN' is ALREADY COMPLETE!"
+  echo "    - .env WEB_HOST: $CURRENT_WEB_HOST"
+  echo "    - /etc/caddy/Caddyfile contains: $DOMAIN"
+  echo ""
+  echo "To re-run or overwrite this setup, pass the --force flag:"
+  echo "  bash scripts/setup-caddy.sh $DOMAIN --force"
+  echo ""
+  exit 0
+fi
 
 echo ""
 echo "=== Caddy TLS Setup ==="
