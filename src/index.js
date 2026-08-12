@@ -384,7 +384,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     ? resolveTierFromGrants(member, server.tierGrants)
     : resolveTier(member, findGuildRoles(config.roles, interaction.guildId));
 
-  if (!hasAccess(tier, command.tier)) {
+  if (command.tier && !hasAccess(tier, command.tier)) {
     await interaction.reply({ ...errorEmbed('You do not have permission to use this command.'), ephemeral: true });
     notify.botLog(interaction.guildId, {
       event: 'auth.access_denied',

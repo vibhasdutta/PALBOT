@@ -36,13 +36,28 @@ function basicAuthMiddleware(password, username) {
 
 function renderPage(body) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Palworld Bot Agent</title>
-<style>body{font-family:sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem}
-table{width:100%;border-collapse:collapse}td,th{padding:.5rem;border-bottom:1px solid #ddd;text-align:left}
-input{width:100%;padding:.4rem;margin:.2rem 0;box-sizing:border-box}button{padding:.5rem 1rem;cursor:pointer}
-.btn-detect{background:#2563eb;color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;margin-bottom:1rem}
-.banner{padding:.5rem;margin:.5rem 0;border-radius:4px;font-size:.9rem}
-.banner-info{background:#dbeafe;color:#1e40af}
-.banner-warn{background:#fef3c7;color:#92400e}
+<style>
+:root{--cah-black:#000000;--cah-white:#ffffff;--cah-red:#fe2f2f;--cah-violet:#7333f1;--cah-gold:#d7b73b;--cah-surface:#121212;--cah-muted:rgba(255,255,255,0.55)}
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:var(--cah-black);color:var(--cah-white);max-width:720px;margin:2rem auto;padding:0 1rem}
+h1{font-weight:800}
+h2{font-weight:800;font-size:1.1rem;margin-top:2rem}
+p{color:var(--cah-muted)}
+code{color:var(--cah-white);background:var(--cah-surface);border:2px solid var(--cah-white);border-radius:8px;padding:0.1rem 0.4rem}
+a{color:var(--cah-violet);font-weight:700}
+table{width:100%;border-collapse:collapse}
+td,th{padding:.6rem;border-bottom:2px solid var(--cah-surface);text-align:left}
+th{color:var(--cah-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.03em;font-weight:800}
+label{display:block;font-size:.75rem;color:var(--cah-muted);font-weight:800;text-transform:uppercase;letter-spacing:0.03em;margin-top:0.75rem}
+input{width:100%;padding:.6rem .9rem;margin:.2rem 0;box-sizing:border-box;background:var(--cah-black);border:2px solid var(--cah-white);border-radius:38px;color:var(--cah-white);font-family:inherit}
+input:focus{outline:none;border-color:var(--cah-violet)}
+button{padding:.5rem 1.1rem;cursor:pointer;border:2px solid var(--cah-white);background:transparent;color:var(--cah-white);border-radius:38px;font-family:inherit;font-weight:800;font-size:0.85rem}
+button:hover{background:var(--cah-white);color:var(--cah-black)}
+.btn-detect{border-color:var(--cah-violet);color:var(--cah-violet);margin-bottom:1rem}
+.btn-detect:hover{background:var(--cah-violet);color:var(--cah-white)}
+.banner{padding:.6rem .9rem;margin:.5rem 0;border-radius:13px;font-size:.9rem;font-weight:700;background:var(--cah-black)}
+.banner-info{border:2px solid var(--cah-gold);color:var(--cah-white)}
+.banner-warn{border:2px solid var(--cah-red);color:var(--cah-white)}
 @media (max-width:480px){body{margin:1rem auto}}</style></head>
 <body>${body}</body></html>`;
 }

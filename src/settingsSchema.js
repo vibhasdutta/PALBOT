@@ -13,7 +13,7 @@ const CATEGORIES = {
 
 const SETTINGS_SCHEMA = [
   // Gameplay
-  { key: 'Difficulty', label: 'Difficulty', category: 'gameplay', type: 'select', options: ['None', 'Custom', 'Easy', 'Normal', 'Hard'], description: 'Server difficulty preset' },
+  { key: 'Difficulty', label: 'Difficulty', category: 'gameplay', type: 'select', options: ['None', 'Casual', 'Normal', 'Hard'], description: 'Server difficulty preset' },
   { key: 'RandomizerType', label: 'Randomizer Type', category: 'gameplay', type: 'select', options: ['None', 'Default'], description: 'Type of randomizer to use' },
   { key: 'RandomizerSeed', label: 'Randomizer Seed', category: 'gameplay', type: 'text', description: 'Seed string for the randomizer' },
   { key: 'bIsRandomizerPalLevelRandom', label: 'Randomize Pal Levels', category: 'gameplay', type: 'boolean', description: 'Whether to randomize Pal levels' },
@@ -32,7 +32,7 @@ const SETTINGS_SCHEMA = [
   { key: 'PalDamageRateDefense', label: 'Pal Defense Damage Rate', category: 'combat', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Damage taken multiplier for Pals (In-game max: 5.0)' },
   { key: 'PlayerDamageRateAttack', label: 'Player Attack Damage Rate', category: 'combat', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Damage multiplier for Player attacks (In-game max: 5.0)' },
   { key: 'PlayerDamageRateDefense', label: 'Player Defense Damage Rate', category: 'combat', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Damage taken multiplier for Players (In-game max: 5.0)' },
-  { key: 'EquipmentDurabilityDamageRate', label: 'Equipment Durability Damage Rate', category: 'combat', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Rate at which equipment loses durability (In-game max: 5.0)' },
+  { key: 'EquipmentDurabilityDamageRate', label: 'Equipment Durability Damage Rate', category: 'combat', type: 'range', min: 0.0, max: 5.0, step: 0.1, description: '0 disables durability loss entirely (In-game max: 5.0)' },
 
   // Player
   { key: 'PlayerStomachDecreaceRate', label: 'Player Stomach Decrease Rate', category: 'player', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Rate at which player hunger decreases (In-game max: 5.0)' },
@@ -109,7 +109,7 @@ const SETTINGS_SCHEMA = [
   { key: 'BlockRespawnTime', label: 'Block Respawn Time (Seconds)', category: 'world', type: 'number', step: 1, min: 0, description: 'Time in seconds for ore and resource blocks to respawn' },
   { key: 'RespawnPenaltyDurationThreshold', label: 'Respawn Penalty Duration Threshold (Seconds)', category: 'world', type: 'number', step: 1, min: 0, description: 'Threshold duration in seconds for player respawn penalties' },
   { key: 'RespawnPenaltyTimeScale', label: 'Respawn Penalty Time Scale', category: 'world', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Time scale for respawn penalties (In-game max: 5.0)' },
-  { key: 'ItemCorruptionMultiplier', label: 'Item Corruption Multiplier', category: 'world', type: 'range', min: 0.1, max: 5.0, step: 0.1, description: 'Multiplier for item corruption or decay speed (In-game max: 5.0)' },
+  { key: 'ItemCorruptionMultiplier', label: 'Item Corruption Multiplier', category: 'world', type: 'range', min: 0.0, max: 5.0, step: 0.1, description: '0 disables item spoilage entirely (In-game max: 5.0)' },
   { key: 'bAllowGlobalPalboxExport', label: 'Allow Global Palbox Export', category: 'world', type: 'boolean', description: 'Allow exporting Pals to global Palbox' },
   { key: 'bAllowGlobalPalboxImport', label: 'Allow Global Palbox Import', category: 'world', type: 'boolean', description: 'Allow importing Pals from global Palbox' },
   { key: 'ItemContainerForceMarkDirtyInterval', label: 'Item Container Force Update Interval (Seconds)', category: 'world', type: 'number', step: 1, min: 0, description: 'Interval in seconds for forcing item container sync' },

@@ -76,12 +76,11 @@ const ERROR_TEMPLATE = (title, message) => `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Error - Palworld Settings</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body {
-      background-color: #0f172a;
-      color: #f8fafc;
-      font-family: 'Inter', sans-serif;
+      background-color: #000000;
+      color: #ffffff;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -90,17 +89,17 @@ const ERROR_TEMPLATE = (title, message) => `
       padding: 1rem;
     }
     .card {
-      background-color: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 0.5rem;
+      background-color: #121212;
+      border: 2px solid #fe2f2f;
+      border-radius: 13px;
       padding: 2.5rem;
       max-width: 480px;
       width: 100%;
       text-align: center;
     }
     .icon { font-size: 3rem; margin-bottom: 1rem; }
-    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #dc2626; }
-    p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; color: #fe2f2f; }
+    p { color: rgba(255, 255, 255, 0.7); font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem; }
   </style>
 </head>
 <body>
@@ -124,138 +123,197 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Palworld Bot Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --cah-black: #000000;
+      --cah-white: #ffffff;
+      --cah-red: #fe2f2f;
+      --cah-violet: #7333f1;
+      --cah-gold: #d7b73b;
+      --cah-surface: #121212;
+      --cah-muted: rgba(255, 255, 255, 0.55);
+      --cah-muted-2: rgba(255, 255, 255, 0.4);
+    }
     *, *::before, *::after { box-sizing: border-box; }
     body {
-      background-color: #0f172a;
-      color: #f8fafc;
-      font-family: 'Inter', sans-serif;
+      background-color: var(--cah-black);
+      color: var(--cah-white);
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-weight: 400;
       margin: 0;
       padding: 0;
       min-height: 100vh;
     }
     .header {
-      background: #1e293b;
-      border-bottom: 1px solid #334155;
+      background: var(--cah-black);
+      border-bottom: 2px solid var(--cah-white);
       padding: 1rem 2rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
     .header-left { display: flex; align-items: center; gap: 0.75rem; }
-    .header img { width: 36px; height: 36px; border-radius: 50%; }
-    .header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
-    .header-user { color: #94a3b8; font-size: 0.85rem; }
-    .main { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
-    .section-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 1.5rem; color: #e2e8f0; }
-    .spinner { text-align: center; color: #94a3b8; padding: 3rem; }
+    .header img { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--cah-white); }
+    .header h1 { font-size: 1.1rem; margin: 0; font-weight: 800; }
+    .header-user { color: var(--cah-muted); font-size: 0.85rem; font-weight: 400; }
+    .main { max-width: 1200px; margin: 2rem auto; padding: 0 1.5rem; }
+    .section-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 1.5rem; color: var(--cah-white); }
+    .spinner { text-align: center; color: var(--cah-muted); padding: 3rem; font-weight: 800; }
     .error-banner {
-      background: #7f1d1d;
-      border: 1px solid #dc2626;
-      color: #fca5a5;
-      padding: 0.75rem 1rem;
-      border-radius: 0.375rem;
+      grid-column: 1 / -1;
+      background: var(--cah-black);
+      border: 2px solid var(--cah-red);
+      color: var(--cah-white);
+      padding: 0.85rem 1.1rem;
+      border-radius: 13px;
       margin-bottom: 1rem;
       font-size: 0.9rem;
+      font-weight: 700;
     }
     .success-banner {
-      background: #14532d;
-      border: 1px solid #22c55e;
-      color: #86efac;
-      padding: 0.75rem 1rem;
-      border-radius: 0.375rem;
+      background: var(--cah-black);
+      border: 2px solid var(--cah-gold);
+      color: var(--cah-white);
+      padding: 0.85rem 1.1rem;
+      border-radius: 13px;
       margin-bottom: 1rem;
       font-size: 0.9rem;
+      font-weight: 700;
+    }
+    #content {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 1.25rem;
+      align-items: start;
     }
     .server-card {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 0.5rem;
+      background: var(--cah-surface);
+      border: 2px solid var(--cah-white);
+      border-radius: 13px;
       padding: 1.5rem;
-      margin-bottom: 1.25rem;
     }
+    /* An open attach/settings form needs real width to be usable -- let
+       whichever card has one expanded take the full row instead of being
+       squeezed into a single grid column alongside its siblings. */
+    .server-card:has(.form-panel) { grid-column: 1 / -1; }
     .server-card-header {
       display: flex;
       align-items: center;
       gap: 0.5rem;
       margin-bottom: 1rem;
     }
-    .server-card-header .label { font-size: 1.05rem; font-weight: 600; }
-    .server-card-header .agent-id { color: #64748b; font-size: 0.8rem; }
+    .server-card-header .label { font-size: 1.1rem; font-weight: 800; }
+    .server-card-header .agent-id { color: var(--cah-muted); font-size: 0.8rem; font-weight: 400; }
     .guild-list { list-style: none; padding: 0; margin: 0 0 1rem; }
     .guild-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.5rem 0.75rem;
-      background: #0f172a;
-      border-radius: 0.375rem;
+      padding: 0.6rem 0.9rem;
+      background: var(--cah-black);
+      border: 2px solid var(--cah-white);
+      border-radius: 13px;
       margin-bottom: 0.5rem;
       font-size: 0.9rem;
     }
-    .guild-item-name { font-weight: 500; }
+    .guild-item-name { font-weight: 800; }
     .guild-item-actions { display: flex; gap: 0.5rem; }
     .btn {
-      padding: 0.4rem 0.85rem;
-      border: none;
-      border-radius: 0.375rem;
+      padding: 0.5rem 1.1rem;
+      border: 2px solid var(--cah-white);
+      background: transparent;
+      border-radius: 38px;
       cursor: pointer;
       font-family: inherit;
       font-size: 0.8rem;
-      font-weight: 500;
-      transition: opacity 0.15s;
+      font-weight: 800;
+      color: var(--cah-white);
+      transition: opacity 0.15s, transform 0.1s;
     }
-    .btn:hover { opacity: 0.85; }
-    .btn-primary { background: #3b82f6; color: #fff; }
-    .btn-danger { background: #dc2626; color: #fff; }
-    .btn-secondary { background: #334155; color: #e2e8f0; }
-    .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
+    .btn:hover { opacity: 0.8; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { border-color: var(--cah-violet); color: var(--cah-violet); }
+    .btn-primary:hover { background: var(--cah-violet); color: var(--cah-white); }
+    .btn-danger { border-color: var(--cah-red); color: var(--cah-red); }
+    .btn-danger:hover { background: var(--cah-red); color: var(--cah-white); }
+    .btn-secondary { border-color: var(--cah-white); color: var(--cah-white); }
+    .btn-secondary:hover { background: var(--cah-white); color: var(--cah-black); }
+    .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.75rem; }
     .form-panel {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 0.375rem;
+      background: var(--cah-black);
+      border: 2px solid var(--cah-gold);
+      border-radius: 13px;
       padding: 1.25rem;
       margin-top: 0.75rem;
     }
     .form-row { margin-bottom: 1rem; }
     .form-row label {
       display: block;
-      font-size: 0.8rem;
-      color: #94a3b8;
-      margin-bottom: 0.3rem;
-      font-weight: 500;
+      font-size: 0.75rem;
+      color: var(--cah-muted);
+      margin-bottom: 0.35rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
     }
     .form-row input, .form-row select {
       width: 100%;
-      padding: 0.5rem;
-      background: #1e293b;
-      border: 1px solid #475569;
-      border-radius: 0.375rem;
-      color: #f8fafc;
+      padding: 0.6rem 0.9rem;
+      background: var(--cah-black);
+      border: 2px solid var(--cah-white);
+      border-radius: 38px;
+      color: var(--cah-white);
       font-family: inherit;
       font-size: 0.85rem;
     }
-    .form-row input:focus, .form-row select:focus { outline: none; border-color: #3b82f6; }
-    .radio-group { display: flex; gap: 1rem; align-items: center; margin-top: 0.3rem; }
-    .radio-group label { margin: 0; font-size: 0.85rem; color: #e2e8f0; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; }
+    .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--cah-violet); }
+    .settings-panel { max-width: none; }
+    .range-row { display: flex; align-items: center; gap: 0.75rem; }
+    .range-row input[type="range"] { width: auto; flex: 1; accent-color: var(--cah-violet); }
+    .range-readout { min-width: 3.5rem; text-align: right; font-size: 0.85rem; color: var(--cah-white); font-family: monospace; font-weight: 800; }
+    .toggle-group { display: flex; gap: 0.4rem; }
+    .toggle-btn {
+      flex: 1;
+      padding: 0.5rem;
+      border: 2px solid var(--cah-white);
+      border-radius: 38px;
+      background: transparent;
+      color: var(--cah-white);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .toggle-btn:hover { opacity: 0.8; }
+    .toggle-btn.active { background: var(--cah-violet); border-color: var(--cah-violet); color: var(--cah-white); }
     .channel-id-input { margin-top: 0.5rem; }
     .form-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
-    .no-guilds { color: #64748b; font-size: 0.85rem; font-style: italic; }
+    .no-guilds { color: var(--cah-muted); font-size: 0.85rem; font-style: italic; font-weight: 400; }
     .role-badge-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; max-height: 140px; overflow-y: auto; padding: 0.2rem; }
-    .role-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.6rem; border-radius: 9999px; background: #1e293b; border: 1px solid #475569; font-size: 0.8rem; cursor: pointer; user-select: none; color: #e2e8f0; }
-    .role-badge:hover { border-color: #3b82f6; }
+    .role-badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; border-radius: 38px; background: transparent; border: 2px solid var(--cah-white); font-size: 0.8rem; cursor: pointer; user-select: none; color: var(--cah-white); font-weight: 700; }
+    .role-badge:hover { border-color: var(--cah-violet); }
     .role-badge input { margin: 0; cursor: pointer; width: auto; }
     .role-badge-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .tier-group { border: 1px solid #334155; border-radius: 0.375rem; padding: 0.75rem; margin-bottom: 1rem; background: #0b1329; }
-    .tier-group-title { font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 0.5rem; }
+    .tier-group { border: 2px solid var(--cah-white); border-radius: 13px; padding: 0.85rem; margin-bottom: 1rem; background: var(--cah-surface); }
+    .tier-group-title { font-size: 0.75rem; font-weight: 800; color: var(--cah-muted); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tag-input-wrapper { margin-top: 0.4rem; }
     .tag-list-below { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
-    .user-tag-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; background: #1e293b; border: 1px solid #3b82f6; border-radius: 9999px; font-size: 0.8rem; color: #f8fafc; font-family: monospace; }
-    .user-tag-remove { cursor: pointer; color: #94a3b8; font-size: 1rem; line-height: 1; font-weight: bold; }
-    .user-tag-remove:hover { color: #f87171; }
+    .user-id-input {
+      padding: 0.6rem 0.9rem;
+      background: var(--cah-black);
+      border: 2px solid var(--cah-white);
+      border-radius: 38px;
+      color: var(--cah-white);
+      font-family: inherit;
+      font-size: 0.85rem;
+    }
+    .user-id-input:focus { outline: none; border-color: var(--cah-violet); }
+    .user-tag-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.8rem; background: transparent; border: 2px solid var(--cah-gold); border-radius: 38px; font-size: 0.8rem; color: var(--cah-white); font-family: monospace; font-weight: 700; }
+    .user-tag-remove { cursor: pointer; color: var(--cah-red); font-size: 1rem; line-height: 1; font-weight: 800; }
+    .user-tag-remove:hover { color: var(--cah-white); }
     .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
-    .section-title { font-size: 1.3rem; font-weight: 700; color: #e2e8f0; margin: 0; }
-    .empty { color: #64748b; text-align: center; padding: 2rem; }
+    .empty { grid-column: 1 / -1; color: var(--cah-muted); text-align: center; padding: 2rem; font-weight: 700; }
   </style>
 </head>
 <body data-username="${username}" data-avatar="${avatarUrl}" data-user-id="${userId}">
@@ -371,7 +429,7 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       const chk = h('input', { type: 'checkbox', value: r.id, id: tierName + 'Role_' + r.id });
       if (roleSet.has(r.id)) chk.checked = true;
       const dot = h('span', { className: 'role-badge-dot' });
-      dot.style.background = r.color || '#94a3b8';
+      dot.style.background = r.color || 'rgba(255, 255, 255, 0.4)';
       const label = h('label', { className: 'role-badge', for: tierName + 'Role_' + r.id }, chk, dot, r.name);
       list.append(label);
     });
@@ -402,13 +460,13 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
     function renderTags() {
       tagList.innerHTML = '';
       if (!tags.size) {
-        tagList.append(h('span', { style: 'font-size:0.75rem;color:#64748b;font-style:italic;' }, 'No individual user IDs added.'));
+        tagList.append(h('span', { style: 'font-size:0.75rem;color:rgba(255,255,255,0.55);font-style:italic;' }, 'No individual user IDs added.'));
         return;
       }
       tags.forEach(id => {
         const removeBtn = h('span', {
           className: 'user-tag-remove',
-          style: 'cursor:pointer;color:#f87171;font-weight:bold;margin-left:0.3rem;',
+          style: 'cursor:pointer;color:#fe2f2f;font-weight:800;margin-left:0.3rem;',
           onClick: () => { tags.delete(id); renderTags(); }
         }, '✕');
         const pill = h('span', { className: 'user-tag-pill' }, '👤 ' + id, removeBtn);
@@ -656,12 +714,61 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       const categories = data.categories || {};
       const schema = data.schema || [];
 
-      const form = h('div', { className: 'settings-grid', style: 'max-height:400px;overflow-y:auto;padding-right:0.5rem;' });
+      function buildFieldInput(meta, currentValue) {
+        if (meta.type === 'boolean') {
+          const hidden = h('input', { type: 'hidden', id: 'set_' + meta.key, value: currentValue ?? '' });
+          const trueBtn = h('button', { type: 'button', className: 'toggle-btn' + (currentValue === 'True' ? ' active' : '') }, 'True');
+          const falseBtn = h('button', { type: 'button', className: 'toggle-btn' + (currentValue === 'False' ? ' active' : '') }, 'False');
+          trueBtn.addEventListener('click', () => {
+            hidden.value = 'True';
+            trueBtn.classList.add('active');
+            falseBtn.classList.remove('active');
+          });
+          falseBtn.addEventListener('click', () => {
+            hidden.value = 'False';
+            falseBtn.classList.add('active');
+            trueBtn.classList.remove('active');
+          });
+          return h('div', { className: 'toggle-group' }, hidden, trueBtn, falseBtn);
+        }
+
+        if (meta.type === 'range') {
+          const numValue = parseFloat(currentValue);
+          const hasValue = Number.isFinite(numValue);
+          // A native range input silently clamps its value to [min, max] on
+          // render -- if the ini's actual stored value falls outside the
+          // schema's documented range (e.g. manually set past the in-game
+          // max), widen the bounds to include it so hitting Save without
+          // touching this field can never silently shrink the real value.
+          const min = hasValue ? Math.min(meta.min ?? 0, numValue) : (meta.min ?? 0);
+          const max = hasValue ? Math.max(meta.max ?? 100, numValue) : (meta.max ?? 100);
+          const slider = h('input', {
+            type: 'range',
+            id: 'set_' + meta.key,
+            min,
+            max,
+            step: meta.step || 0.1,
+            value: hasValue ? numValue : min,
+          });
+          const readout = h('span', { className: 'range-readout' }, slider.value);
+          slider.addEventListener('input', () => { readout.textContent = slider.value; });
+          return h('div', { className: 'range-row' }, slider, readout);
+        }
+
+        return h('input', {
+          type: meta.type === 'number' ? 'number' : 'text',
+          step: meta.step || 'any',
+          id: 'set_' + meta.key,
+          value: currentValue ?? ''
+        });
+      }
+
+      const form = h('div', { className: 'settings-grid', style: 'max-height:65vh;overflow-y:auto;padding-right:0.5rem;' });
 
       Object.entries(categories).forEach(([catKey, catInfo]) => {
         const catLabel = (catInfo && catInfo.icon ? catInfo.icon + ' ' : '') + (catInfo && catInfo.label ? catInfo.label : catKey);
-        const catHeader = h('div', { className: 'tier-group-title', style: 'margin-top:1rem;color:#3b82f6;' }, catLabel);
-        const catFields = h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;' });
+        const catHeader = h('div', { className: 'tier-group-title', style: 'margin-top:1rem;color:#7333f1;' }, catLabel);
+        const catFields = h('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.75rem 1.25rem;margin-bottom:1rem;' });
         let count = 0;
 
         schema.forEach((meta) => {
@@ -669,12 +776,7 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
             count++;
             const row = h('div', { className: 'form-row', style: 'margin-bottom:0;' },
               h('label', null, (meta.label || meta.key) + (meta.unit ? ' (' + meta.unit + ')' : '')),
-              h('input', {
-                type: meta.type === 'number' ? 'number' : 'text',
-                step: meta.step || 'any',
-                id: 'set_' + meta.key,
-                value: settingsMap[meta.key] ?? ''
-              })
+              buildFieldInput(meta, settingsMap[meta.key])
             );
             catFields.append(row);
           }
@@ -960,7 +1062,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       .map((r) => ({
         id: r.id,
         name: r.name,
-        color: r.color ? `#${r.color.toString(16).padStart(6, '0')}` : '#94a3b8',
+        color: r.color ? `#${r.color.toString(16).padStart(6, '0')}` : 'rgba(255, 255, 255, 0.4)',
         position: r.position ?? 0,
       }))
       .sort((a, b) => b.position - a.position);
