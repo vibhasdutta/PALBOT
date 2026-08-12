@@ -110,7 +110,7 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT,
         warnDiv.id = 'apiWarnMsg';
         if (server.restApiEnabled === false) {
           warnDiv.className = 'banner banner-warn';
-          warnDiv.innerHTML = '⚠️ <b>Warning:</b> <code>bEnableRESTAPI=True</code> was not found in <code>PalWorldSettings.ini</code>. Please make sure REST API is enabled in your server settings so the bot can connect!';
+          warnDiv.innerHTML = '⚠️ <b>Warning:</b> <code>RESTAPIEnabled=True</code> was not found in <code>PalWorldSettings.ini</code>. Please make sure REST API is enabled in your server settings so the bot can connect!';
           document.getElementById('addForm').prepend(warnDiv);
         } else if (warnDiv.parentNode) {
           warnDiv.remove();

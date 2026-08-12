@@ -8,7 +8,7 @@ function readIniOptionSettings(iniPath) {
     const content = fs.readFileSync(iniPath, 'utf8');
     const password = content.match(/AdminPassword="([^"]*)"/)?.[1] || null;
     const port = content.match(/RESTAPIPort=(\d+)/)?.[1] || '8212';
-    const restApiEnabled = /bEnableRESTAPI=True/i.test(content);
+    const restApiEnabled = /(?:bEnableRESTAPI|RESTAPIEnabled)=True/i.test(content);
     return {
       restApiPassword: password,
       restApiPort: port,
