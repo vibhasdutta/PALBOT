@@ -1,0 +1,16 @@
+{
+  "name": "palworld-bot-agent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "scripts": {
+    "start": "node --env-file=.env index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "ws": "^8.18.0"
+  }
+}

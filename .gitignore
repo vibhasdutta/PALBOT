@@ -1,0 +1,8 @@
+node_modules/
+.env
+scrape/
+data/
+config/
+codegraph-cache/
+tests/
+docs/

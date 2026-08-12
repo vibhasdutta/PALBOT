@@ -1,0 +1,21 @@
+{
+  "name": "palworld-discord-bot",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "deploy-commands": "node --env-file=.env src/deploy-commands.js",
+    "check-api": "node --env-file=.env scripts/check-rest-api.js",
+    "test": "node --test",
+    "deploy": "bash scripts/deploy.sh"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.0",
+    "express": "^5.2.1",
+    "pm2": "^7.0.3",
+    "ws": "^8.18.0"
+  }
+}
