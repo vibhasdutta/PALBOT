@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palworld Bot Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <img id="headerAvatar" src="https://cdn.discordapp.com/embed/avatars/0.png" alt="avatar">
+      <div>
+        <h1>Palworld Dashboard</h1>
+        <div class="header-user" id="headerUsername"></div>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="btnHeaderClaim">+ Claim Agent</button>
+  </div>
+  <div class="main">
+    <div class="section-header">
+      <h2 class="section-title">My Servers</h2>
+    </div>
+    <div id="claimPanel" class="form-panel" style="display:none;margin-bottom:1.5rem;">
+      <h3 style="margin-top:0;">Claim an Agent</h3>
+      <div class="form-row">
+        <label>Agent ID</label>
+        <input type="text" id="claimAgentId" placeholder="e.g. 12345678-abcd-1234-abcd-1234567890ab">
+      </div>
+      <div class="form-row">
+        <label>Agent Token</label>
+        <input type="password" id="claimAgentToken" placeholder="Paste 64-character secret token">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btnSubmitClaim">Claim Agent</button>
+        <button class="btn btn-secondary" id="btnCancelClaim">Cancel</button>
+      </div>
+    </div>
+    <div id="content"><div class="spinner">Loading&hellip;</div></div>
+  </div>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>

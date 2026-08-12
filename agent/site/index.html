@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palworld Bot Agent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="main">
+    <span class="mono-label">Palworld Bot Agent</span>
+    <h1>Pair this agent</h1>
+
+    <div class="card pairing-card">
+      <span class="tag">Pairing info</span>
+      <p style="margin-top:12px;">Paste these into the bot's dashboard to pair this agent.</p>
+      <label>Agent ID</label>
+      <code id="agentId">loading&hellip;</code>
+      <label>Agent Token</label>
+      <code id="agentToken">loading&hellip;</code>
+      <label>Bot URL</label>
+      <code id="botWsUrl">loading&hellip;</code>
+    </div>
+
+    <h2>Registered servers</h2>
+    <table>
+      <thead><tr><th>Label</th><th>Server ID</th><th></th><th></th></tr></thead>
+      <tbody id="serverRows"><tr><td colspan="4">Loading&hellip;</td></tr></tbody>
+    </table>
+
+    <h2>Add a server</h2>
+    <button type="button" class="btn btn-detect" id="btnDetect">Auto-detect local server</button>
+    <div id="detectMsg"></div>
+    <form method="post" action="/servers" id="addForm" class="card">
+      <label>Label</label>
+      <input name="label" id="inputLabel" value="main" required>
+      <label>Palworld REST URL</label>
+      <input name="restApiUrl" id="inputRestApiUrl" placeholder="http://localhost:8212">
+      <label>Admin password</label>
+      <input name="restApiPassword" id="inputRestApiPassword" type="password">
+      <label>pm2 process name</label>
+      <input name="pm2ProcessName" id="inputPm2ProcessName">
+      <label>Save file path</label>
+      <input name="saveFilePath" id="inputSaveFilePath">
+      <label>Settings (ini) file path</label>
+      <input name="settingsFilePath" id="inputSettingsFilePath">
+      <div style="margin-top:24px;">
+        <button type="submit" class="btn btn-primary">Add server</button>
+      </div>
+    </form>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

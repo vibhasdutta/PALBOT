@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit Server — Palworld Bot Agent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="main">
+    <span class="mono-label">Palworld Bot Agent</span>
+    <h1 id="pageTitle">Edit server</h1>
+
+    <form method="post" id="editForm" class="card">
+      <label>Label</label>
+      <input name="label" id="inputLabel">
+      <label>Palworld REST URL</label>
+      <input name="restApiUrl" id="inputRestApiUrl">
+      <label>Admin password</label>
+      <input name="restApiPassword" id="inputRestApiPassword" type="password">
+      <label>pm2 process name</label>
+      <input name="pm2ProcessName" id="inputPm2ProcessName">
+      <label>Save file path</label>
+      <input name="saveFilePath" id="inputSaveFilePath">
+      <label>Settings (ini) file path</label>
+      <input name="settingsFilePath" id="inputSettingsFilePath">
+      <div style="margin-top:24px;">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+    <p><a href="/">&larr; Back</a></p>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
