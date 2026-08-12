@@ -1,8 +1,9 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { ensureState, listServers, addServer, updateServer, removeServer } = require('./state');
+const { detectLocalServers } = require('./detector');
 
-const DEFAULT_PORT = 4300;
+const DEFAULT_PORT = process.env.AGENT_SITE_PORT || 4300;
 const DEFAULT_HOST = '127.0.0.1';
 
 function timingSafeEqual(a, b) {
@@ -15,14 +16,18 @@ function timingSafeEqual(a, b) {
 // HTTP Basic Auth -- the browser's own native login prompt, no custom
 // login page or session/cookie machinery needed for a small admin tool.
 // Only active when a password is actually configured.
-function basicAuthMiddleware(password) {
+function basicAuthMiddleware(password, username) {
   return (req, res, next) => {
     const auth = req.headers.authorization || '';
     const [scheme, encoded] = auth.split(' ');
     if (scheme === 'Basic' && encoded) {
       const decoded = Buffer.from(encoded, 'base64').toString('utf8');
-      const suppliedPassword = decoded.slice(decoded.indexOf(':') + 1);
-      if (timingSafeEqual(suppliedPassword, password)) return next();
+      const colonIdx = decoded.indexOf(':');
+      const suppliedUser = decoded.slice(0, colonIdx);
+      const suppliedPassword = decoded.slice(colonIdx + 1);
+      const passwordMatch = timingSafeEqual(suppliedPassword, password);
+      const userMatch = !username || timingSafeEqual(suppliedUser, username);
+      if (passwordMatch && userMatch) return next();
     }
     res.set('WWW-Authenticate', 'Basic realm="Palworld Bot Agent"');
     res.status(401).send('Authentication required.');
@@ -33,7 +38,11 @@ function renderPage(body) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Palworld Bot Agent</title>
 <style>body{font-family:sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem}
 table{width:100%;border-collapse:collapse}td,th{padding:.5rem;border-bottom:1px solid #ddd;text-align:left}
-input{width:100%;padding:.4rem;margin:.2rem 0;box-sizing:border-box}button{padding:.5rem 1rem}
+input{width:100%;padding:.4rem;margin:.2rem 0;box-sizing:border-box}button{padding:.5rem 1rem;cursor:pointer}
+.btn-detect{background:#2563eb;color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;margin-bottom:1rem}
+.banner{padding:.5rem;margin:.5rem 0;border-radius:4px;font-size:.9rem}
+.banner-info{background:#dbeafe;color:#1e40af}
+.banner-warn{background:#fef3c7;color:#92400e}
 @media (max-width:480px){body{margin:1rem auto}}</style></head>
 <body>${body}</body></html>`;
 }
@@ -41,7 +50,7 @@ input{width:100%;padding:.4rem;margin:.2rem 0;box-sizing:border-box}button{paddi
 // Always running while the agent is up, not just a first-run wizard --
 // owners revisit this anytime at http://<host>:<port> to add/remove
 // servers or re-copy the pairing info.
-function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT, host = DEFAULT_HOST, password }) {
+function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT, host = DEFAULT_HOST, password, username }) {
   const isLocalOnly = host === '127.0.0.1' || host === 'localhost';
   if (!isLocalOnly && !password) {
     // Refuse to start rather than silently serve an unauthenticated admin
@@ -51,8 +60,13 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT,
   }
 
   const app = express();
-  if (password) app.use(basicAuthMiddleware(password));
+  if (password) app.use(basicAuthMiddleware(password, username));
   app.use(express.urlencoded({ extended: true }));
+
+  app.get('/detect', (req, res) => {
+    const detected = detectLocalServers();
+    res.json({ success: true, detected });
+  });
 
   app.get('/', (req, res) => {
     const state = ensureState(statePath);
@@ -70,15 +84,72 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT,
       <h2>Registered servers</h2>
       <table><tr><th>Label</th><th>Server ID</th><th></th><th></th></tr>${rows}</table>
       <h2>Add a server</h2>
-      <form method="post" action="/servers">
-        <label>Label<input name="label" required></label>
-        <label>Palworld REST URL<input name="restApiUrl" placeholder="http://localhost:8212"></label>
-        <label>Admin password<input name="restApiPassword" type="password"></label>
-        <label>pm2 process name<input name="pm2ProcessName"></label>
-        <label>Save file path<input name="saveFilePath"></label>
-        <label>Settings (ini) file path<input name="settingsFilePath"></label>
+      <button type="button" class="btn-detect" id="btnDetect">🔍 Auto-Detect Local Server</button>
+      <div id="detectMsg"></div>
+      <form method="post" action="/servers" id="addForm">
+        <label>Label<input name="label" id="inputLabel" value="main" required></label>
+        <label>Palworld REST URL<input name="restApiUrl" id="inputRestApiUrl" placeholder="http://localhost:8212"></label>
+        <label>Admin password<input name="restApiPassword" id="inputRestApiPassword" type="password"></label>
+        <label>pm2 process name<input name="pm2ProcessName" id="inputPm2ProcessName"></label>
+        <label>Save file path<input name="saveFilePath" id="inputSaveFilePath"></label>
+        <label>Settings (ini) file path<input name="settingsFilePath" id="inputSettingsFilePath"></label>
         <button type="submit">Add server</button>
       </form>
+      <script>
+      let detectedServers = [];
+      function applyServer(server) {
+        if (!server) return;
+        if (server.label) document.getElementById('inputLabel').value = server.label;
+        if (server.restApiUrl) document.getElementById('inputRestApiUrl').value = server.restApiUrl;
+        if (server.restApiPassword) document.getElementById('inputRestApiPassword').value = server.restApiPassword;
+        if (server.pm2ProcessName) document.getElementById('inputPm2ProcessName').value = server.pm2ProcessName;
+        if (server.saveFilePath) document.getElementById('inputSaveFilePath').value = server.saveFilePath;
+        if (server.settingsFilePath) document.getElementById('inputSettingsFilePath').value = server.settingsFilePath;
+        
+        const warnDiv = document.getElementById('apiWarnMsg') || document.createElement('div');
+        warnDiv.id = 'apiWarnMsg';
+        if (server.restApiEnabled === false) {
+          warnDiv.className = 'banner banner-warn';
+          warnDiv.innerHTML = '⚠️ <b>Warning:</b> <code>bEnableRESTAPI=True</code> was not found in <code>PalWorldSettings.ini</code>. Please make sure REST API is enabled in your server settings so the bot can connect!';
+          document.getElementById('addForm').prepend(warnDiv);
+        } else if (warnDiv.parentNode) {
+          warnDiv.remove();
+        }
+      }
+      document.getElementById('btnDetect').addEventListener('click', async () => {
+        const msg = document.getElementById('detectMsg');
+        msg.className = 'banner banner-info';
+        msg.textContent = 'Scanning system for Palworld configs and processes...';
+        try {
+          const res = await fetch('/detect');
+          const data = await res.json();
+          detectedServers = data.detected || [];
+          if (detectedServers.length > 0) {
+            applyServer(detectedServers[0]);
+            msg.className = 'banner banner-info';
+            if (detectedServers.length === 1) {
+              msg.textContent = '✓ Auto-detected server configuration! Form pre-filled.';
+            } else {
+              let html = '✓ Found ' + detectedServers.length + ' servers! Select one: <select id="selDetected" style="padding:.2rem;margin-left:.5rem">';
+              detectedServers.forEach((s, i) => {
+                html += '<option value="' + i + '">' + (s.label || ('Server ' + (i+1))) + ' (' + (s.restApiUrl || 'no REST URL') + ')</option>';
+              });
+              html += '</select>';
+              msg.innerHTML = html;
+              document.getElementById('selDetected').addEventListener('change', (e) => {
+                applyServer(detectedServers[e.target.value]);
+              });
+            }
+          } else {
+            msg.className = 'banner banner-warn';
+            msg.textContent = 'No running Palworld process or PalWorldSettings.ini found in common paths. Please enter details manually.';
+          }
+        } catch (err) {
+          msg.className = 'banner banner-warn';
+          msg.textContent = 'Auto-detection failed: ' + err.message;
+        }
+      });
+      </script>
     `));
   });
 

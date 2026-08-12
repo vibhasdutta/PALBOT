@@ -102,4 +102,4 @@ function onServersChanged() {
 }
 
 connect();
-startSite({ statePath: STATE_PATH, botWsUrl: config.botWsUrl, onServersChanged, host: config.siteHost, port: config.sitePort, password: config.sitePassword });
+startSite({ statePath: STATE_PATH, botWsUrl: config.botWsUrl, onServersChanged, host: config.siteHost, port: config.sitePort, password: config.sitePassword, username: config.siteUsername });
