@@ -9,8 +9,11 @@
 import { createInterface } from 'node:readline/promises';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import ecosystemConfig from '../deploy/ecosystem.config.js';
+
+const EXAMPLE_PATH_MARKER = '/path/to/your/';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -76,7 +79,29 @@ console.log(`Deploying: ${selected.map((a) => a.name).join(', ')}`);
 if (selected.some((a) => a.name === 'palworld-bot')) run('npm test');
 if (selected.some((a) => a.name === 'palworld-agent')) run('npm test', path.join(repoRoot, 'agent'));
 
+// Catches an unedited example path (deploy/ecosystem.config.js's
+// palworld entry ships as a placeholder) or any other misconfigured
+// script path with a clear message here, instead of a confusing pm2
+// "Script not found" error after it's already tried to start the app.
+function checkScriptPath(appName) {
+  const app = ecosystemConfig.apps.find((a) => a.name === appName);
+  if (!app) return true;
+
+  if (app.script.includes(EXAMPLE_PATH_MARKER)) {
+    console.error(`Skipping ${appName}: deploy/ecosystem.config.js still has the example path (${app.script}). Edit it to point at your real install first.`);
+    return false;
+  }
+  if (!existsSync(app.script)) {
+    console.error(`Skipping ${appName}: script not found at ${app.script}. Check the path in deploy/ecosystem.config.js.`);
+    return false;
+  }
+  return true;
+}
+
+let deployedCount = 0;
 for (const app of selected) {
+  if (!checkScriptPath(app.name)) continue;
+
   if (isRunning(app.name)) {
     console.log(`${app.name} already running -- restarting in place`);
     run(`pm2 restart ${app.name}`);
@@ -84,6 +109,12 @@ for (const app of selected) {
     console.log(`${app.name} not running -- starting fresh`);
     run(`pm2 start deploy/ecosystem.config.js --only ${app.name}`);
   }
+  deployedCount += 1;
 }
 
-run('pm2 save');
+if (deployedCount > 0) {
+  run('pm2 save');
+} else {
+  console.log('Nothing was actually deployed -- skipping pm2 save.');
+  process.exit(1);
+}
