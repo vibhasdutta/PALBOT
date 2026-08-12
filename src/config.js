@@ -20,10 +20,12 @@ function writeJsonArray(filePath, entries) {
 }
 
 function loadGuildsFile(guildsPath) {
+  if (!guildsPath) return [];
   return readJsonArray(guildsPath).map((guild) => ({ guildId: guild.guildId }));
 }
 
 function loadRolesFile(rolesPath) {
+  if (!rolesPath) return [];
   return readJsonArray(rolesPath).map((entry) => ({
     guildId: entry.guildId,
     admin: normalizeTier(entry.admin),
@@ -188,21 +190,30 @@ function findGuildServer(servers, guildId, label) {
 // has to *edit* values, never create the entries by hand. Returns true the
 // first time a guild is seen, false on every call after.
 function ensureGuildEntry(guildsPath, rolesPath, serversPath, guildId) {
-  const guilds = readJsonArray(guildsPath);
-  if (guilds.some((g) => g.guildId === guildId)) return false;
+  if (guildsPath) {
+    const guilds = readJsonArray(guildsPath);
+    if (!guilds.some((g) => g.guildId === guildId)) {
+      writeJsonArray(guildsPath, [...guilds, { guildId }]);
+    }
+  }
 
-  writeJsonArray(guildsPath, [...guilds, { guildId }]);
-
-  const roles = readJsonArray(rolesPath);
-  writeJsonArray(rolesPath, [
-    ...roles,
-    { guildId, admin: { roleIds: [], userIds: [] }, operator: { roleIds: [], userIds: [] }, common: { roleIds: [], userIds: [] } },
-  ]);
+  if (rolesPath) {
+    const roles = readJsonArray(rolesPath);
+    if (!roles.some((r) => r.guildId === guildId)) {
+      writeJsonArray(rolesPath, [
+        ...roles,
+        { guildId, admin: { roleIds: [], userIds: [] }, operator: { roleIds: [], userIds: [] }, common: { roleIds: [], userIds: [] } },
+      ]);
+    }
+  }
 
   const servers = readJsonArray(serversPath);
-  writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, botLogChannelId: null, servers: [] }]);
+  if (!servers.some((s) => s.guildId === guildId)) {
+    writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, botLogChannelId: null, servers: [] }]);
+    return true;
+  }
 
-  return true;
+  return false;
 }
 
 // Reads roles.json, applies `mutate` to the (guild-specific) tier entry --
