@@ -129,6 +129,7 @@ function createStatusChannelManager({
   intervalMs = 10000,
 }) {
   const lastChannelName = new Map(); // `${guildId}:${channelKey}` -> last name we set/observed
+  const purgedChannels = new Set(); // tracks channels purged in this session
 
   function getEntry(guildId, label) {
     return readState(statePath).find((e) => e.guildId === guildId && e.label === label) || null;
@@ -154,7 +155,13 @@ function createStatusChannelManager({
 
     if (channelId) {
       const existing = await guild.channels.fetch(channelId).catch(() => null);
-      if (existing) return existing;
+      if (existing) {
+        if (!purgedChannels.has(existing.id) && typeof existing.bulkDelete === 'function') {
+          purgedChannels.add(existing.id);
+          await existing.bulkDelete(100, true).catch(() => {});
+        }
+        return existing;
+      }
     }
 
     const created = await guild.channels.create({
@@ -167,6 +174,7 @@ function createStatusChannelManager({
     });
     if (!created) return null;
 
+    purgedChannels.add(created.id);
     for (const server of servers) {
       mutateServerEntry(serversPath, guildId, server.label, (entry) => { entry.statusChannelId = created.id; });
     }

@@ -381,23 +381,43 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
   function buildTagInput(tierName, initialUserIds = []) {
     const tags = new Set(initialUserIds);
     const wrapper = h('div', { className: 'tag-input-wrapper' });
+
+    const inputRow = h('div', { style: 'display:flex;gap:0.5rem;align-items:center;' });
     const input = h('input', {
       type: 'text',
-      placeholder: 'Type User ID & press Enter',
-      className: 'user-id-input'
+      placeholder: 'Type Discord User ID & press Enter or + Add',
+      className: 'user-id-input',
+      style: 'flex:1;'
     });
-    const tagList = h('div', { className: 'tag-list-below' });
+    const addBtn = h('button', {
+      type: 'button',
+      className: 'btn btn-secondary btn-sm',
+      onClick: () => addTag(input.value)
+    }, '+ Add');
+
+    inputRow.append(input, addBtn);
+
+    const tagList = h('div', { className: 'tag-list-below', style: 'display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;min-height:24px;' });
 
     function renderTags() {
       tagList.innerHTML = '';
+      if (!tags.size) {
+        tagList.append(h('span', { style: 'font-size:0.75rem;color:#64748b;font-style:italic;' }, 'No individual user IDs added.'));
+        return;
+      }
       tags.forEach(id => {
-        const removeBtn = h('span', { className: 'user-tag-remove', onClick: () => { tags.delete(id); renderTags(); } }, '×');
+        const removeBtn = h('span', {
+          className: 'user-tag-remove',
+          style: 'cursor:pointer;color:#f87171;font-weight:bold;margin-left:0.3rem;',
+          onClick: () => { tags.delete(id); renderTags(); }
+        }, '✕');
         const pill = h('span', { className: 'user-tag-pill' }, '👤 ' + id, removeBtn);
         tagList.append(pill);
       });
     }
 
     function addTag(val) {
+      if (!val) return;
       const parts = val.split(/[\s,]+/);
       let added = false;
       parts.forEach(p => {
@@ -414,7 +434,7 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
     }
 
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+      if (e.key === 'Enter' || e.keyCode === 13 || e.key === ',' || e.key === ' ') {
         e.preventDefault();
         addTag(input.value);
       }
@@ -424,7 +444,7 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       if (input.value) addTag(input.value);
     });
 
-    wrapper.append(input, tagList);
+    wrapper.append(inputRow, tagList);
     renderTags();
 
     wrapper.getUserIds = () => {
