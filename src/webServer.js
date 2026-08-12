@@ -421,9 +421,9 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       const parts = val.split(/[\s,]+/);
       let added = false;
       parts.forEach(p => {
-        const trimmed = p.trim();
-        if (trimmed && /^\d+$/.test(trimmed)) {
-          tags.add(trimmed);
+        const cleanId = p.replace(/\D/g, '');
+        if (cleanId.length >= 15) {
+          tags.add(cleanId);
           added = true;
         }
       });
@@ -578,8 +578,8 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
             operator: { roleIds: getCheckedRoles('op'), userIds: opTagInput.getUserIds() },
             common: { roleIds: commonRoles, userIds: commonUserIds },
           },
-          statusChannelId: document.getElementById('statusChannelSelect').value || null,
-          logChannelId: document.getElementById('logChannelSelect').value || null,
+          statusChannelId: (document.getElementById('statusChannelSelect').value && document.getElementById('statusChannelSelect').value !== '__loading__') ? document.getElementById('statusChannelSelect').value : null,
+          logChannelId: (document.getElementById('logChannelSelect').value && document.getElementById('logChannelSelect').value !== '__loading__') ? document.getElementById('logChannelSelect').value : null,
         };
         try {
           await api('/dashboard/servers/' + agentId + '/' + serverId + '/guilds', {
@@ -1005,7 +1005,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     // Validate channel IDs if provided as non-null strings
     for (const field of ['statusChannelId', 'logChannelId']) {
       const val = body[field];
-      if (typeof val === 'string') {
+      if (typeof val === 'string' && val.trim() !== '' && val !== '__loading__') {
         const ch = await client.channels.fetch(val).catch(() => null);
         if (!ch || ch.guildId !== guildId) {
           return res.status(400).json({ success: false, error: `Channel ${val} does not exist in this guild.` });

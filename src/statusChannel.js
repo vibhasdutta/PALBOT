@@ -156,9 +156,22 @@ function createStatusChannelManager({
     if (channelId) {
       const existing = await guild.channels.fetch(channelId).catch(() => null);
       if (existing) {
-        if (!purgedChannels.has(existing.id) && typeof existing.bulkDelete === 'function') {
+        if (!purgedChannels.has(existing.id)) {
           purgedChannels.add(existing.id);
-          await existing.bulkDelete(100, true).catch(() => {});
+          try {
+            const fetchedMsgs = await existing.messages.fetch({ limit: 50 }).catch(() => null);
+            if (fetchedMsgs && fetchedMsgs.size > 0 && typeof existing.bulkDelete === 'function') {
+              await existing.bulkDelete(fetchedMsgs, true).catch(async () => {
+                for (const [, msg] of fetchedMsgs) {
+                  if (msg.author.id === client.user?.id) {
+                    await msg.delete().catch(() => {});
+                  }
+                }
+              });
+            }
+          } catch {
+            // Ignore purge errors
+          }
         }
         return existing;
       }
@@ -218,6 +231,15 @@ function createStatusChannelManager({
 
     const channel = await resolveChannel(guildId, currentChannelId, servers, desiredName);
     if (!channel) return;
+
+    for (const server of servers) {
+      const entry = getEntry(guildId, server.label);
+      if (entry && entry.lastChannelId !== channel.id) {
+        saveEntry(guildId, server.label, { statusMessageId: null, playersMessageId: null, lastChannelId: channel.id });
+      } else if (!entry) {
+        saveEntry(guildId, server.label, { lastChannelId: channel.id });
+      }
+    }
 
     for (const r of results) {
       const statusMsg = await resolveMessage(channel, guildId, r.server.label, 'statusMessageId');
