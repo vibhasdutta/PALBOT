@@ -64,8 +64,22 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT,
   app.use(express.urlencoded({ extended: true }));
 
   app.get('/detect', (req, res) => {
-    const detected = detectLocalServers();
-    res.json({ success: true, detected });
+    const state = ensureState(statePath);
+    const registered = state.servers || [];
+    const allDetected = detectLocalServers();
+    const detected = allDetected.filter((d) => {
+      return !registered.some((r) => {
+        if (d.settingsFilePath && r.settingsFilePath && d.settingsFilePath === r.settingsFilePath) return true;
+        if (d.restApiUrl && r.restApiUrl && d.restApiUrl === r.restApiUrl) return true;
+        if (d.pm2ProcessName && r.pm2ProcessName && d.pm2ProcessName === r.pm2ProcessName) return true;
+        return false;
+      });
+    });
+    res.json({
+      success: true,
+      detected,
+      alreadyRegisteredCount: allDetected.length - detected.length,
+    });
   });
 
   app.get('/', (req, res) => {
@@ -130,7 +144,7 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT,
             if (detectedServers.length === 1) {
               msg.textContent = '✓ Auto-detected server configuration! Form pre-filled.';
             } else {
-              let html = '✓ Found ' + detectedServers.length + ' servers! Select one: <select id="selDetected" style="padding:.2rem;margin-left:.5rem">';
+              let html = '✓ Found ' + detectedServers.length + ' new server(s)! Select one: <select id="selDetected" style="padding:.2rem;margin-left:.5rem">';
               detectedServers.forEach((s, i) => {
                 html += '<option value="' + i + '">' + (s.label || ('Server ' + (i+1))) + ' (' + (s.restApiUrl || 'no REST URL') + ')</option>';
               });
@@ -140,6 +154,9 @@ function startSite({ statePath, botWsUrl, onServersChanged, port = DEFAULT_PORT,
                 applyServer(detectedServers[e.target.value]);
               });
             }
+          } else if (data.alreadyRegisteredCount > 0) {
+            msg.className = 'banner banner-info';
+            msg.textContent = '✓ All detected local servers are already registered above!';
           } else {
             msg.className = 'banner banner-warn';
             msg.textContent = 'No running Palworld process or PalWorldSettings.ini found in common paths. Please enter details manually.';

@@ -9,13 +9,13 @@ const { findAgentsByOwner, claimAgent } = require('./agentStore');
 // Configuration constants from ENV
 const WEB_PORT = process.env.WEB_PORT || 8090;
 const WEB_SECRET = process.env.WEB_SECRET || crypto.randomBytes(32).toString('hex');
-// WEB_HOST is just the reachable hostname/IP -- the port only ever comes
-// from WEB_PORT, composed here, so the two can't drift out of sync the way
-// a separately hand-typed WEB_BASE_URL (old approach) could. Doesn't cover
-// a reverse-proxy setup where the public port differs from WEB_PORT itself
-// -- revisit if that's ever needed.
 const WEB_HOST = process.env.WEB_HOST || 'localhost';
-const WEB_BASE_URL = `http://${WEB_HOST}:${WEB_PORT}`;
+const WEB_SCHEME = process.env.WEB_SCHEME || (WEB_HOST !== 'localhost' && WEB_HOST !== '127.0.0.1' ? 'https' : 'http');
+const WEB_BASE_URL = process.env.WEB_BASE_URL || (
+  WEB_SCHEME === 'https'
+    ? `https://${WEB_HOST}`
+    : `http://${WEB_HOST}:${WEB_PORT}`
+);
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 
 // Helper: Signing and verification
@@ -242,6 +242,19 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
     .channel-id-input { margin-top: 0.5rem; }
     .form-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
     .no-guilds { color: #64748b; font-size: 0.85rem; font-style: italic; }
+    .role-badge-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; max-height: 140px; overflow-y: auto; padding: 0.2rem; }
+    .role-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.6rem; border-radius: 9999px; background: #1e293b; border: 1px solid #475569; font-size: 0.8rem; cursor: pointer; user-select: none; color: #e2e8f0; }
+    .role-badge:hover { border-color: #3b82f6; }
+    .role-badge input { margin: 0; cursor: pointer; width: auto; }
+    .role-badge-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .tier-group { border: 1px solid #334155; border-radius: 0.375rem; padding: 0.75rem; margin-bottom: 1rem; background: #0b1329; }
+    .tier-group-title { font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 0.5rem; }
+    .tag-list-below { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+    .user-tag-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; background: #1e293b; border: 1px solid #3b82f6; border-radius: 9999px; font-size: 0.8rem; color: #f8fafc; font-family: monospace; }
+    .user-tag-remove { cursor: pointer; color: #94a3b8; font-size: 1rem; line-height: 1; font-weight: bold; }
+    .user-tag-remove:hover { color: #f87171; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+    .section-title { font-size: 1.3rem; font-weight: 700; color: #e2e8f0; margin: 0; }
     .empty { color: #64748b; text-align: center; padding: 2rem; }
   </style>
 </head>
@@ -254,15 +267,64 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
         <div class="header-user">${username}</div>
       </div>
     </div>
+    <button class="btn btn-primary" id="btnHeaderClaim">+ Claim Agent</button>
   </div>
   <div class="main">
-    <div class="section-title">My Servers</div>
+    <div class="section-header">
+      <h2 class="section-title">My Servers</h2>
+    </div>
+    <div id="claimPanel" style="display:none;" class="form-panel" style="margin-bottom:1.5rem;">
+      <h3 style="margin-top:0;font-size:1rem;">Claim an Agent</h3>
+      <div class="form-row">
+        <label>Agent ID</label>
+        <input type="text" id="claimAgentId" placeholder="e.g. 12345678-abcd-1234-abcd-1234567890ab">
+      </div>
+      <div class="form-row">
+        <label>Agent Token</label>
+        <input type="password" id="claimAgentToken" placeholder="Paste 64-character secret token">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btnSubmitClaim">Claim Agent</button>
+        <button class="btn btn-secondary" id="btnCancelClaim">Cancel</button>
+      </div>
+    </div>
     <div id="content"><div class="spinner">Loading\u2026</div></div>
   </div>
 <script>
 (function() {
   let guildsCache = null;
   const content = document.getElementById('content');
+  const claimPanel = document.getElementById('claimPanel');
+  const btnHeaderClaim = document.getElementById('btnHeaderClaim');
+
+  btnHeaderClaim.addEventListener('click', () => {
+    claimPanel.style.display = claimPanel.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('btnCancelClaim').addEventListener('click', () => {
+    claimPanel.style.display = 'none';
+  });
+  document.getElementById('btnSubmitClaim').addEventListener('click', async () => {
+    const agentId = document.getElementById('claimAgentId').value.trim();
+    const agentToken = document.getElementById('claimAgentToken').value.trim();
+    if (!agentId || !agentToken) {
+      showBanner(claimPanel, 'Agent ID and Agent Token are required.', 'error');
+      return;
+    }
+    try {
+      await api('/dashboard/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId, agentToken }),
+      });
+      showBanner(content, 'Agent claimed successfully!', 'success');
+      claimPanel.style.display = 'none';
+      document.getElementById('claimAgentId').value = '';
+      document.getElementById('claimAgentToken').value = '';
+      loadServers();
+    } catch (err) {
+      showBanner(claimPanel, err.message, 'error');
+    }
+  });
 
   function h(tag, attrs, ...children) {
     const el = document.createElement(tag);
@@ -298,33 +360,78 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
     setTimeout(() => el.remove(), 5000);
   }
 
-  function buildChannelFields(prefix, currentValue) {
-    const isExisting = typeof currentValue === 'string' && currentValue;
-    const row = h('div', { className: 'form-row' });
-    const label = h('label', null, prefix === 'status' ? 'Status Channel' : 'Log Channel');
-    const group = h('div', { className: 'radio-group' });
-    const radioAuto = h('input', { type: 'radio', name: prefix + 'Channel', value: 'auto', id: prefix + 'Auto' });
-    const radioExisting = h('input', { type: 'radio', name: prefix + 'Channel', value: 'existing', id: prefix + 'Existing' });
-    if (isExisting) radioExisting.checked = true; else radioAuto.checked = true;
-    group.append(
-      h('label', { for: prefix + 'Auto' }, radioAuto, ' Auto-create'),
-      h('label', { for: prefix + 'Existing' }, radioExisting, ' Use existing channel')
-    );
-    const idInput = h('input', {
-      type: 'text', placeholder: 'Paste channel ID', className: 'channel-id-input',
-      id: prefix + 'ChannelId', value: isExisting ? currentValue : ''
+  function renderRoleBadges(tierName, roles, existingRoleIds = []) {
+    const list = h('div', { className: 'role-badge-list' });
+    if (!roles || !roles.length) {
+      list.append(h('span', { className: 'no-guilds' }, 'No non-managed roles in this guild.'));
+      return list;
+    }
+    const roleSet = new Set(existingRoleIds);
+    roles.forEach(r => {
+      const chk = h('input', { type: 'checkbox', value: r.id, id: tierName + 'Role_' + r.id });
+      if (roleSet.has(r.id)) chk.checked = true;
+      const dot = h('span', { className: 'role-badge-dot' });
+      dot.style.background = r.color || '#94a3b8';
+      const label = h('label', { className: 'role-badge', for: tierName + 'Role_' + r.id }, chk, dot, r.name);
+      list.append(label);
     });
-    idInput.style.display = isExisting ? '' : 'none';
-    radioAuto.addEventListener('change', () => { idInput.style.display = 'none'; });
-    radioExisting.addEventListener('change', () => { idInput.style.display = ''; idInput.focus(); });
-    row.append(label, group, idInput);
-    return row;
+    return list;
   }
 
-  function getChannelValue(prefix) {
-    const radio = document.querySelector('input[name="' + prefix + 'Channel"]:checked');
-    if (!radio || radio.value === 'auto') return null;
-    return document.getElementById(prefix + 'ChannelId').value.trim() || null;
+  function buildTagInput(tierName, initialUserIds = []) {
+    const tags = new Set(initialUserIds);
+    const wrapper = h('div', { className: 'tag-input-wrapper' });
+    const input = h('input', {
+      type: 'text',
+      placeholder: 'Type User ID & press Enter',
+      className: 'user-id-input'
+    });
+    const tagList = h('div', { className: 'tag-list-below' });
+
+    function renderTags() {
+      tagList.innerHTML = '';
+      tags.forEach(id => {
+        const removeBtn = h('span', { className: 'user-tag-remove', onClick: () => { tags.delete(id); renderTags(); } }, '×');
+        const pill = h('span', { className: 'user-tag-pill' }, '👤 ' + id, removeBtn);
+        tagList.append(pill);
+      });
+    }
+
+    function addTag(val) {
+      const parts = val.split(/[\s,]+/);
+      let added = false;
+      parts.forEach(p => {
+        const trimmed = p.trim();
+        if (trimmed && /^\d+$/.test(trimmed)) {
+          tags.add(trimmed);
+          added = true;
+        }
+      });
+      if (added) {
+        input.value = '';
+        renderTags();
+      }
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+        e.preventDefault();
+        addTag(input.value);
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      if (input.value) addTag(input.value);
+    });
+
+    wrapper.append(input, tagList);
+    renderTags();
+
+    wrapper.getUserIds = () => {
+      if (input.value) addTag(input.value);
+      return Array.from(tags);
+    };
+    return wrapper;
   }
 
   function buildAttachForm(agentId, serverId, serverLabel, existingData, card) {
@@ -344,37 +451,115 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       h('label', null, 'Label'),
       h('input', { type: 'text', id: 'serverLabel', value: isEdit ? existingData.label : serverLabel })
     );
-    const adminRow = h('div', { className: 'form-row' },
-      h('label', null, 'Admin User IDs (comma-separated)'),
-      h('input', { type: 'text', id: 'adminUserIds', value: isEdit && existingData.tierGrants?.admin?.userIds ? existingData.tierGrants.admin.userIds.join(', ') : '' })
-    );
-    const opRow = h('div', { className: 'form-row' },
-      h('label', null, 'Operator User IDs (comma-separated)'),
-      h('input', { type: 'text', id: 'opUserIds', value: isEdit && existingData.tierGrants?.operator?.userIds ? existingData.tierGrants.operator.userIds.join(', ') : '' })
-    );
-    const modRow = h('div', { className: 'form-row' },
-      h('label', null, 'Mod User IDs (comma-separated)'),
-      h('input', { type: 'text', id: 'modUserIds', value: isEdit && existingData.tierGrants?.mod?.userIds ? existingData.tierGrants.mod.userIds.join(', ') : '' })
+
+    const statusRow = h('div', { className: 'form-row' },
+      h('label', null, 'Status Channel'),
+      h('select', { id: 'statusChannelSelect' },
+        h('option', { value: '' }, '✨ Auto-create status channel'),
+        h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels\u2026')
+      )
     );
 
-    const statusFields = buildChannelFields('status', isEdit ? existingData.statusChannelId : null);
-    const logFields = buildChannelFields('log', isEdit ? existingData.logChannelId : null);
+    const logRow = h('div', { className: 'form-row' },
+      h('label', null, 'Log Channel'),
+      h('select', { id: 'logChannelSelect' },
+        h('option', { value: '' }, '🚫 None / Disabled'),
+        h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels\u2026')
+      )
+    );
+
+    const adminTagInput = buildTagInput('admin', isEdit && existingData.tierGrants?.admin?.userIds ? existingData.tierGrants.admin.userIds : []);
+    const adminGroup = h('div', { className: 'tier-group' },
+      h('div', { className: 'tier-group-title' }, '👑 Admin Roles (Full control)'),
+      h('div', { id: 'adminRoleContainer' }, h('div', { className: 'spinner' }, 'Loading roles\u2026')),
+      h('div', { className: 'form-row', style: 'margin-top:0.5rem;margin-bottom:0;' },
+        h('label', null, 'Individual Admin User IDs'),
+        adminTagInput
+      )
+    );
+
+    const opTagInput = buildTagInput('op', isEdit && existingData.tierGrants?.operator?.userIds ? existingData.tierGrants.operator.userIds : []);
+    const opGroup = h('div', { className: 'tier-group' },
+      h('div', { className: 'tier-group-title' }, '⚡ Operator Roles (Start / Stop / Restart / Kick)'),
+      h('div', { id: 'opRoleContainer' }, h('div', { className: 'spinner' }, 'Loading roles\u2026')),
+      h('div', { className: 'form-row', style: 'margin-top:0.5rem;margin-bottom:0;' },
+        h('label', null, 'Individual Operator User IDs'),
+        opTagInput
+      )
+    );
+
+    const commonInitialUserIds = isEdit ? (existingData.tierGrants?.common?.userIds || existingData.tierGrants?.mod?.userIds || []) : [];
+    const commonTagInput = buildTagInput('common', commonInitialUserIds);
+    const commonGroup = h('div', { className: 'tier-group' },
+      h('div', { className: 'tier-group-title' }, '🛡️ Common Roles (View status, players & metrics)'),
+      h('div', { id: 'commonRoleContainer' }, h('div', { className: 'spinner' }, 'Loading roles\u2026')),
+      h('div', { className: 'form-row', style: 'margin-top:0.5rem;margin-bottom:0;' },
+        h('label', null, 'Individual Common User IDs'),
+        commonTagInput
+      )
+    );
+
+    async function loadGuildResources(guildId) {
+      if (!guildId) return;
+      try {
+        const res = await api('/dashboard/guilds/' + guildId + '/resources');
+        const channels = res.channels || [];
+        const roles = res.roles || [];
+
+        const statusSel = document.getElementById('statusChannelSelect');
+        statusSel.innerHTML = '';
+        statusSel.append(h('option', { value: '' }, '✨ Auto-create status channel'));
+        channels.forEach(c => {
+          const opt = h('option', { value: c.id }, '#' + c.name);
+          if (isEdit && existingData.statusChannelId === c.id) opt.selected = true;
+          statusSel.append(opt);
+        });
+
+        const logSel = document.getElementById('logChannelSelect');
+        logSel.innerHTML = '';
+        logSel.append(h('option', { value: '' }, '🚫 None / Disabled'));
+        channels.forEach(c => {
+          const opt = h('option', { value: c.id }, '#' + c.name);
+          if (isEdit && existingData.logChannelId === c.id) opt.selected = true;
+          logSel.append(opt);
+        });
+
+        const adminCon = document.getElementById('adminRoleContainer');
+        adminCon.innerHTML = '';
+        adminCon.append(renderRoleBadges('admin', roles, isEdit ? existingData.tierGrants?.admin?.roleIds : []));
+
+        const opCon = document.getElementById('opRoleContainer');
+        opCon.innerHTML = '';
+        opCon.append(renderRoleBadges('op', roles, isEdit ? existingData.tierGrants?.operator?.roleIds : []));
+
+        const commonRoleIds = isEdit ? (existingData.tierGrants?.common?.roleIds || existingData.tierGrants?.mod?.roleIds || []) : [];
+        const commonCon = document.getElementById('commonRoleContainer');
+        commonCon.innerHTML = '';
+        commonCon.append(renderRoleBadges('common', roles, commonRoleIds));
+      } catch (err) {
+        showBanner(panel, 'Failed to load guild channels/roles: ' + err.message, 'error');
+      }
+    }
 
     const actions = h('div', { className: 'form-actions' },
       h('button', { className: 'btn btn-primary', onClick: async () => {
         const guildId = isEdit ? existingData.guildId : document.getElementById('guildSelect').value;
         if (!guildId) { showBanner(panel, 'Please select a guild.', 'error'); return; }
-        const parseIds = (id) => document.getElementById(id).value.split(',').map(s => s.trim()).filter(Boolean);
+        const getCheckedRoles = (prefix) => Array.from(panel.querySelectorAll('input[id^="' + prefix + 'Role_"]:checked')).map(el => el.value);
+
+        const commonRoles = getCheckedRoles('common');
+        const commonUserIds = commonTagInput.getUserIds();
+
         const payload = {
           guildId,
           label: document.getElementById('serverLabel').value.trim(),
           tierGrants: {
-            admin: { roleIds: [], userIds: parseIds('adminUserIds') },
-            operator: { roleIds: [], userIds: parseIds('opUserIds') },
-            mod: { roleIds: [], userIds: parseIds('modUserIds') },
+            admin: { roleIds: getCheckedRoles('admin'), userIds: adminTagInput.getUserIds() },
+            operator: { roleIds: getCheckedRoles('op'), userIds: opTagInput.getUserIds() },
+            common: { roleIds: commonRoles, userIds: commonUserIds },
           },
-          statusChannelId: getChannelValue('status'),
-          logChannelId: getChannelValue('log'),
+          statusChannelId: document.getElementById('statusChannelSelect').value || null,
+          logChannelId: document.getElementById('logChannelSelect').value || null,
         };
         try {
           await api('/dashboard/servers/' + agentId + '/' + serverId + '/guilds', {
@@ -391,15 +576,16 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       h('button', { className: 'btn btn-secondary', onClick: () => panel.remove() }, 'Cancel')
     );
 
-    panel.append(guildRow, labelRow, adminRow, opRow, modRow, statusFields, logFields, actions);
+    panel.append(guildRow, labelRow, statusRow, logRow, adminGroup, opGroup, commonGroup, actions);
     card.append(panel);
 
-    if (!isEdit) {
+    if (isEdit) {
+      loadGuildResources(existingData.guildId);
+    } else {
       loadGuilds().then(guilds => {
         const sel = document.getElementById('guildSelect');
         sel.innerHTML = '';
         sel.append(h('option', { value: '' }, '-- Select a guild --'));
-        // get already-attached guild IDs for this server
         const attached = new Set();
         card.querySelectorAll('.guild-item').forEach(gi => { const gid = gi.dataset.guildId; if (gid) attached.add(gid); });
         guilds.filter(g => !attached.has(g.id)).forEach(g => {
@@ -408,6 +594,9 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
         if (sel.options.length === 1) {
           sel.append(h('option', { value: '', disabled: 'true' }, 'No available guilds'));
         }
+        sel.addEventListener('change', (e) => {
+          if (e.target.value) loadGuildResources(e.target.value);
+        });
       }).catch(err => showBanner(panel, 'Failed to load guilds: ' + err.message, 'error'));
     }
   }
@@ -420,6 +609,87 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       loadServers();
     } catch (err) {
       showBanner(content, err.message, 'error');
+    }
+  }
+
+  async function buildSettingsPanel(agentId, serverId, serverLabel, card) {
+    const old = card.querySelector('.settings-panel');
+    if (old) { old.remove(); return; }
+
+    const panel = h('div', { className: 'form-panel settings-panel' },
+      h('h3', { style: 'margin-top:0;font-size:1rem;' }, '⚙️ World Settings — ' + serverLabel),
+      h('div', { className: 'spinner' }, 'Loading world settings\u2026')
+    );
+    card.append(panel);
+
+    try {
+      const data = await api('/dashboard/servers/' + agentId + '/' + serverId + '/settings');
+      panel.innerHTML = '';
+      panel.append(h('h3', { style: 'margin-top:0;font-size:1rem;' }, '⚙️ World Settings — ' + serverLabel));
+
+      if (!data.settings || !Object.keys(data.settings).length) {
+        showBanner(panel, 'No settings file configured or found for this server.', 'error');
+        return;
+      }
+
+      const settingsMap = { ...data.settings };
+      const categories = data.categories || {};
+      const schema = data.schema || {};
+
+      const form = h('div', { className: 'settings-grid', style: 'max-height:400px;overflow-y:auto;padding-right:0.5rem;' });
+
+      Object.entries(categories).forEach(([catKey, catName]) => {
+        const catHeader = h('div', { className: 'tier-group-title', style: 'margin-top:1rem;color:#3b82f6;' }, catName);
+        const catFields = h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;' });
+        let count = 0;
+
+        Object.entries(schema).forEach(([key, meta]) => {
+          if (meta.category === catKey && key in settingsMap) {
+            count++;
+            const row = h('div', { className: 'form-row', style: 'margin-bottom:0;' },
+              h('label', null, (meta.label || key) + (meta.unit ? ' (' + meta.unit + ')' : '')),
+              h('input', {
+                type: meta.type === 'number' ? 'number' : 'text',
+                step: meta.step || 'any',
+                id: 'set_' + key,
+                value: settingsMap[key] ?? ''
+              })
+            );
+            catFields.append(row);
+          }
+        });
+
+        if (count > 0) {
+          form.append(catHeader, catFields);
+        }
+      });
+
+      const actions = h('div', { className: 'form-actions' },
+        h('button', { className: 'btn btn-primary', onClick: async () => {
+          const newSettings = {};
+          Object.keys(schema).forEach(key => {
+            const input = document.getElementById('set_' + key);
+            if (input) newSettings[key] = input.value;
+          });
+          try {
+            await api('/dashboard/servers/' + agentId + '/' + serverId + '/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ settings: newSettings }),
+            });
+            showBanner(panel, 'World settings saved successfully!', 'success');
+          } catch (err) {
+            showBanner(panel, err.message, 'error');
+          }
+        }}, 'Save Settings'),
+        h('button', { className: 'btn btn-secondary', onClick: () => panel.remove() }, 'Close')
+      );
+
+      panel.append(form, actions);
+    } catch (err) {
+      panel.innerHTML = '';
+      showBanner(panel, 'Failed to load settings: ' + err.message, 'error');
+      panel.append(h('button', { className: 'btn btn-secondary', onClick: () => panel.remove(), style: 'margin-top:1rem;' }, 'Close'));
     }
   }
 
@@ -460,7 +730,11 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
             card.append(h('div', { className: 'no-guilds' }, 'Not attached to any guild yet.'));
           }
 
-          card.append(h('button', { className: 'btn btn-primary', onClick: () => buildAttachForm(agent.agentId, server.serverId, server.label, null, card) }, '+ Attach to a guild'));
+          const btnGroup = h('div', { style: 'display:flex;gap:0.5rem;margin-top:0.75rem;' },
+            h('button', { className: 'btn btn-primary', onClick: () => buildAttachForm(agent.agentId, server.serverId, server.label, null, card) }, '+ Attach to a guild'),
+            h('button', { className: 'btn btn-secondary', onClick: () => buildSettingsPanel(agent.agentId, server.serverId, server.label, card) }, '⚙️ World Settings')
+          );
+          card.append(btnGroup);
           content.append(card);
         }
       }
@@ -633,6 +907,44 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       }
     }
     res.json({ success: true, guilds });
+  });
+
+  app.get('/dashboard/guilds/:guildId/resources', async (req, res) => {
+    const session = requireDashboardSession(req, res);
+    if (!session) return;
+
+    const guild = client.guilds.cache.get(req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: 'Guild not found or bot is not in this guild.' });
+
+    try {
+      await guild.members.fetch(session.userId);
+    } catch {
+      return res.status(403).json({ success: false, error: 'You are not a member of this guild.' });
+    }
+
+    try {
+      if (guild.channels?.fetch) await guild.channels.fetch();
+      if (guild.roles?.fetch) await guild.roles.fetch();
+    } catch {
+      // Ignore if fetch fails, use cache
+    }
+
+    const channels = Array.from(guild.channels?.cache?.values() || [])
+      .filter((c) => c.type === 0 || c.type === 5 || (typeof c.isTextBased === 'function' && c.isTextBased() && !c.isThread?.()))
+      .map((c) => ({ id: c.id, name: c.name, position: c.rawPosition ?? c.position ?? 0 }))
+      .sort((a, b) => a.position - b.position);
+
+    const roles = Array.from(guild.roles?.cache?.values() || [])
+      .filter((r) => r.name !== '@everyone' && !r.managed)
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        color: r.color ? `#${r.color.toString(16).padStart(6, '0')}` : '#94a3b8',
+        position: r.position ?? 0,
+      }))
+      .sort((a, b) => b.position - a.position);
+
+    res.json({ success: true, channels, roles });
   });
 
   // Verifies the requesting user actually owns agentId before letting them

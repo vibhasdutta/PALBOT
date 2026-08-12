@@ -32,7 +32,7 @@ function resolveTierFromGrants(member, tierGrants) {
   if (!tierGrants) return null;
   if (memberMatchesTier(member, tierGrants.admin)) return 'admin';
   if (memberMatchesTier(member, tierGrants.operator)) return 'operator';
-  if (memberMatchesTier(member, tierGrants.mod)) return 'mod';
+  if (memberMatchesTier(member, tierGrants.common) || memberMatchesTier(member, tierGrants.mod)) return 'common';
   return null;
 }
 
