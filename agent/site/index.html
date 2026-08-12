@@ -15,11 +15,20 @@
       <span class="tag">Pairing info</span>
       <p style="margin-top:12px;">Paste these into the bot's dashboard to pair this agent.</p>
       <label>Agent ID</label>
-      <code id="agentId">loading&hellip;</code>
+      <div class="copy-row">
+        <code id="agentId">loading&hellip;</code>
+        <button type="button" class="btn-copy" data-copy-target="agentId" aria-label="Copy Agent ID">Copy</button>
+      </div>
       <label>Agent Token</label>
-      <code id="agentToken">loading&hellip;</code>
+      <div class="copy-row">
+        <code id="agentToken">loading&hellip;</code>
+        <button type="button" class="btn-copy" data-copy-target="agentToken" aria-label="Copy Agent Token">Copy</button>
+      </div>
       <label>Bot URL</label>
-      <code id="botWsUrl">loading&hellip;</code>
+      <div class="copy-row">
+        <code id="botWsUrl">loading&hellip;</code>
+        <button type="button" class="btn-copy" data-copy-target="botWsUrl" aria-label="Copy Bot URL">Copy</button>
+      </div>
     </div>
 
     <h2>Registered servers</h2>

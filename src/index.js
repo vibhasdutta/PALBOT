@@ -24,6 +24,7 @@ const { createNotifier, formatAuditEntry } = require('./notify');
 const { autocompleteServer } = require('./serverOption');
 const { autocompletePlayers } = require('./playerOption');
 const { createExpectedActions } = require('./expectedActions');
+const { createActionLock } = require('./actionLock');
 const { watchPm2 } = require('./pm2Watcher');
 const { createPlayerPoller } = require('./playerPoller');
 const { createSaveFileWatcher } = require('./saveFileWatcher');
@@ -61,6 +62,10 @@ const client = new Client({
 
 const notify = createNotifier(client, (guildId) => config.servers.find((s) => s.guildId === guildId)?.botLogChannelId || null);
 const expectedActions = createExpectedActions();
+// Shared across every guild/server -- keyed by `${guildId}:${label}` inside
+// each command, so start/stop/restart can't stack a second in-flight
+// action onto the same server no matter which guild's command triggered it.
+const actionLock = createActionLock();
 
 const auditLog = {
   appendAuditEntry: (entry) => {
@@ -73,7 +78,7 @@ const auditLog = {
 
 const webServer = createWebServer({ config, client, notify, auditLog, agentRegistry });
 
-const baseCtx = { config, auditLog, webServer };
+const baseCtx = { config, auditLog, webServer, actionLock };
 
 // Resolves which server (if any) a command should act on for this guild, and
 // builds the ctx for it. A guild is its own tenant: no shared Palworld
@@ -310,15 +315,20 @@ const saveFileWatcher = createSaveFileWatcher({
 // Live status dashboard channel per server: two auto-updating messages
 // (status, players) plus a channel name reflecting online/starting/offline.
 // Auto-creates the channel and persists its ID back to servers.json when
-// none is configured yet, or the configured one has been deleted.
+// none is configured yet, or the configured one has been deleted. Unlike
+// playerPoller/saveFileWatcher, agent-routed servers are NOT excluded here
+// -- getInfo/getPlayers/getMetrics all cross the agent connection fine via
+// createAgentPalworldClient, so there's no reason this feature shouldn't
+// work for them too.
 const statusChannelManager = createStatusChannelManager({
   client,
   getGuildGroups: () => config.servers.map((entry) => ({
     guildId: entry.guildId,
-    // Same exclusion as playerPoller above.
-    servers: findGuildServers(config.servers, entry.guildId).filter((s) => !s.agentId).map((s) => ({ ...s, ...resolveServerConnection(s) })),
+    servers: findGuildServers(config.servers, entry.guildId).map((s) => (s.agentId ? s : { ...s, ...resolveServerConnection(s) })),
   })),
-  createClient: createPalworldClient,
+  createClient: (server) => (server.agentId
+    ? createAgentPalworldClient({ agentRegistry, agentId: server.agentId, serverId: server.serverId })
+    : createPalworldClient({ baseUrl: server.restApiUrl, password: server.restApiPassword })),
   serversPath: config.serversPath,
   statePath: path.join(path.dirname(config.auditLogPath), 'statusChannels.json'),
 });

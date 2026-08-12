@@ -15,6 +15,10 @@
 
 * , *::before, *::after { box-sizing: border-box; }
 
+/* Scrollbars are hidden everywhere but scrolling still works. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { display: none; }
+
 body {
   margin: 0;
   padding: 0;
@@ -69,16 +73,39 @@ p { color: var(--color-slate); margin: 0 0 16px; }
   margin-bottom: 16px;
 }
 
+.copy-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
 .pairing-card code {
   display: block;
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 14px;
   background: var(--color-mist-gray);
   border-radius: 8px;
   padding: 12px 16px;
-  margin: 8px 0 16px;
   word-break: break-all;
 }
+
+.btn-copy {
+  flex-shrink: 0;
+  background: var(--color-carbon-black);
+  color: var(--color-paper-white);
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-copy:hover { background: var(--color-slate); }
+.btn-copy.copied { background: var(--color-mint-chip); color: var(--color-carbon-black); }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--color-ash); }

@@ -48,9 +48,15 @@ function formatUptime(seconds) {
   return `${h}h ${m}m`;
 }
 
-function defaultGetPm2Status(pm2ProcessName) {
+// Agent-routed servers run on someone else's host -- the bot's own local
+// pm2 daemon has no idea about their process, so there's nothing to check
+// (a name collision with an unrelated local process would be worse than
+// not checking at all). 'unknown' makes buildStatusPayload fall back to
+// 'offline' rather than falsely claiming 'starting'.
+function defaultGetPm2Status(server) {
+  if (server.agentId) return Promise.resolve('unknown');
   return new Promise((resolve) => {
-    pm2.describe(pm2ProcessName, (err, list) => {
+    pm2.describe(server.pm2ProcessName, (err, list) => {
       resolve(err || !list?.[0] ? 'unknown' : list[0].pm2_env.status);
     });
   });
@@ -219,8 +225,8 @@ function createStatusChannelManager({
   async function tickChannelGroup(guildId, channelKey, servers) {
     const results = [];
     for (const server of servers) {
-      const palworld = createClient({ baseUrl: server.restApiUrl, password: server.restApiPassword });
-      const pm2Status = await getPm2Status(server.pm2ProcessName);
+      const palworld = createClient(server);
+      const pm2Status = await getPm2Status(server);
       const displayName = getServerDisplayName(server);
       const { state, embed: statusEmbed } = await buildStatusPayload(palworld, pm2Status, displayName);
       const playersEmbed = await buildPlayersPayload(palworld, displayName);

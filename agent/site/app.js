@@ -117,6 +117,31 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function wireCopyButtons() {
+  document.querySelectorAll('.btn-copy').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const target = document.getElementById(btn.dataset.copyTarget);
+      if (!target) return;
+      try {
+        await navigator.clipboard.writeText(target.textContent);
+      } catch {
+        // Clipboard API unavailable (e.g. non-HTTPS context) -- fall back
+        // to selecting the text so the user can copy it manually.
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1500);
+    });
+  });
+}
+
 wireDetectButton();
+wireCopyButtons();
 loadIndexPage();
 loadEditPage();
