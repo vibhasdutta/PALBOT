@@ -654,25 +654,26 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
 
       const settingsMap = { ...data.settings };
       const categories = data.categories || {};
-      const schema = data.schema || {};
+      const schema = data.schema || [];
 
       const form = h('div', { className: 'settings-grid', style: 'max-height:400px;overflow-y:auto;padding-right:0.5rem;' });
 
-      Object.entries(categories).forEach(([catKey, catName]) => {
-        const catHeader = h('div', { className: 'tier-group-title', style: 'margin-top:1rem;color:#3b82f6;' }, catName);
+      Object.entries(categories).forEach(([catKey, catInfo]) => {
+        const catLabel = (catInfo && catInfo.icon ? catInfo.icon + ' ' : '') + (catInfo && catInfo.label ? catInfo.label : catKey);
+        const catHeader = h('div', { className: 'tier-group-title', style: 'margin-top:1rem;color:#3b82f6;' }, catLabel);
         const catFields = h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;' });
         let count = 0;
 
-        Object.entries(schema).forEach(([key, meta]) => {
-          if (meta.category === catKey && key in settingsMap) {
+        schema.forEach((meta) => {
+          if (meta.category === catKey && meta.key in settingsMap) {
             count++;
             const row = h('div', { className: 'form-row', style: 'margin-bottom:0;' },
-              h('label', null, (meta.label || key) + (meta.unit ? ' (' + meta.unit + ')' : '')),
+              h('label', null, (meta.label || meta.key) + (meta.unit ? ' (' + meta.unit + ')' : '')),
               h('input', {
                 type: meta.type === 'number' ? 'number' : 'text',
                 step: meta.step || 'any',
-                id: 'set_' + key,
-                value: settingsMap[key] ?? ''
+                id: 'set_' + meta.key,
+                value: settingsMap[meta.key] ?? ''
               })
             );
             catFields.append(row);
@@ -687,9 +688,9 @@ const DASHBOARD_TEMPLATE = (username, avatarUrl, userId) => `
       const actions = h('div', { className: 'form-actions' },
         h('button', { className: 'btn btn-primary', onClick: async () => {
           const newSettings = {};
-          Object.keys(schema).forEach(key => {
-            const input = document.getElementById('set_' + key);
-            if (input) newSettings[key] = input.value;
+          schema.forEach((meta) => {
+            const input = document.getElementById('set_' + meta.key);
+            if (input) newSettings[meta.key] = input.value;
           });
           try {
             await api('/dashboard/servers/' + agentId + '/' + serverId + '/settings', {

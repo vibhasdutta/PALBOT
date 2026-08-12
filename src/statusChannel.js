@@ -25,6 +25,8 @@ function guildChannelNameFor(onlineCount, total) {
   return `⌈${onlineCount}⇋${total}⌋-servers`;
 }
 
+const OWN_NAME_PATTERN = /^⌈\d+⇋\d+⌋-servers$/;
+
 // The ini's own ServerName is always on disk whether the process is running
 // or not; falls back to the config label if even that's unavailable.
 function getServerDisplayName(server) {
@@ -227,7 +229,17 @@ function createStatusChannelManager({
 
     const onlineCount = results.filter((r) => r.state === 'online').length;
     const desiredName = guildChannelNameFor(onlineCount, results.length);
-    const currentChannelId = servers[0].statusChannelId; // every server in this group shares the same value (or all null)
+
+    // Prefer our own last-known channel ID (this manager's local state file,
+    // written synchronously the moment a channel is resolved) over
+    // servers[0].statusChannelId, which comes from config.servers in
+    // index.js and only catches up once config/servers.json's file-watcher
+    // reload fires -- not instant, not always reliable depending on the
+    // filesystem. Trusting the stale snapshot here recreated a brand new
+    // channel on every tick until the reload landed. Every server in this
+    // group shares the same channel (or all share "none yet").
+    const trackedChannelId = getEntry(guildId, servers[0].label)?.lastChannelId;
+    const currentChannelId = trackedChannelId || servers[0].statusChannelId;
 
     const channel = await resolveChannel(guildId, currentChannelId, servers, desiredName);
     if (!channel) return;
@@ -249,8 +261,13 @@ function createStatusChannelManager({
       if (playersMsg) await playersMsg.edit({ content: '', embeds: [r.playersEmbed] }).catch(() => {});
     }
 
+    // Only touch the name of a channel that already looks like ours (either
+    // just created with this pattern, or previously auto-named by us on an
+    // earlier tick) -- an existing channel someone picked and gave their
+    // own name to is left alone, never overwritten back to the bracket
+    // pattern.
     const trackKey = `${guildId}:${channelKey}`;
-    if (lastChannelName.get(trackKey) !== desiredName && channel.name !== desiredName) {
+    if (OWN_NAME_PATTERN.test(channel.name) && lastChannelName.get(trackKey) !== desiredName && channel.name !== desiredName) {
       await channel.setName(desiredName).catch((err) => console.error(`statusChannel: failed to rename channel for guild ${guildId}:`, err.message));
     }
     lastChannelName.set(trackKey, desiredName);
