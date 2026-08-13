@@ -19,11 +19,9 @@ const WEB_SECRET = process.env.WEB_SECRET || crypto.randomBytes(32).toString('he
 const WEB_HOST = process.env.WEB_HOST || 'localhost';
 const WEB_SCHEME = process.env.WEB_SCHEME || (WEB_HOST !== 'localhost' && WEB_HOST !== '127.0.0.1' ? 'https' : 'http');
 const WEB_BASE_URL = process.env.WEB_BASE_URL || (
-  (WEB_SCHEME === 'https' && WEB_PORT == 443)
+  WEB_SCHEME === 'https'
     ? `https://${WEB_HOST}`
-    : (WEB_SCHEME === 'http' && WEB_PORT == 80)
-      ? `http://${WEB_HOST}`
-      : `${WEB_SCHEME}://${WEB_HOST}:${WEB_PORT}`
+    : `http://${WEB_HOST}:${WEB_PORT}`
 );
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 
