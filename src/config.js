@@ -208,6 +208,8 @@ function ensureGuildEntry(guildsPath, rolesPath, serversPath, guildId) {
   }
 
   const servers = readJsonArray(serversPath);
+  // ponytail: temporary diagnostic, see matching note in src/index.js.
+  console.log(`[diag] ensureGuildEntry guildId=${guildId} serversPath=${serversPath} readCount=${servers.length} match=${servers.some((s) => s.guildId === guildId)}`);
   if (!servers.some((s) => s.guildId === guildId)) {
     writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, botLogChannelId: null, servers: [] }]);
     return true;

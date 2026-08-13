@@ -189,21 +189,53 @@
       h('input', { type: 'text', id: 'serverLabel', value: isEdit ? existingData.label : serverLabel })
     );
 
+    // No more "auto-create" option -- creating a channel is an explicit
+    // action (the button below), since a guild's status/log channels can
+    // hold servers from several different agent owners and a silent
+    // background create wouldn't know whose server it's even for.
     const statusRow = h('div', { className: 'form-row' },
       h('label', null, 'Status Channel'),
-      h('select', { id: 'statusChannelSelect' },
-        h('option', { value: '' }, 'Auto-create status channel'),
-        h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels…')
+      h('div', { style: 'display:flex;gap:0.5rem;' },
+        h('select', { id: 'statusChannelSelect', style: 'flex:1;' },
+          h('option', { value: '' }, 'None'),
+          h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels…')
+        ),
+        h('button', { type: 'button', className: 'btn btn-secondary btn-sm', onClick: () => createChannel('status') }, '+ Create')
       )
     );
 
     const logRow = h('div', { className: 'form-row' },
       h('label', null, 'Log Channel'),
-      h('select', { id: 'logChannelSelect' },
-        h('option', { value: '' }, 'None / Disabled'),
-        h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels…')
+      h('div', { style: 'display:flex;gap:0.5rem;' },
+        h('select', { id: 'logChannelSelect', style: 'flex:1;' },
+          h('option', { value: '' }, 'None / Disabled'),
+          h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels…')
+        ),
+        h('button', { type: 'button', className: 'btn btn-secondary btn-sm', onClick: () => createChannel('log') }, '+ Create')
       )
     );
+
+    // Creates a channel immediately (POST .../channels) and selects it in
+    // the relevant dropdown -- the user still has to hit Save/Attach to
+    // actually persist the choice, same as picking an existing channel.
+    async function createChannel(kind) {
+      const guildId = isEdit ? existingData.guildId : document.getElementById('guildSelect').value;
+      if (!guildId) { showBanner(panel, 'Select a guild first.', 'error'); return; }
+      const label = document.getElementById('serverLabel').value.trim() || serverLabel || 'server';
+      try {
+        const result = await api('/dashboard/servers/' + agentId + '/' + serverId + '/channels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guildId, kind, label }),
+        });
+        const sel = document.getElementById(kind === 'status' ? 'statusChannelSelect' : 'logChannelSelect');
+        const opt = h('option', { value: result.id }, '#' + result.name);
+        sel.append(opt);
+        sel.value = result.id;
+      } catch (err) {
+        showBanner(panel, 'Failed to create channel: ' + err.message, 'error');
+      }
+    }
 
     const adminTagInput = buildTagInput('admin', isEdit && existingData.tierGrants?.admin?.userIds ? existingData.tierGrants.admin.userIds : []);
     const adminGroup = h('div', { className: 'tier-group' },
@@ -245,7 +277,7 @@
 
         const statusSel = document.getElementById('statusChannelSelect');
         statusSel.innerHTML = '';
-        statusSel.append(h('option', { value: '' }, 'Auto-create status channel'));
+        statusSel.append(h('option', { value: '' }, 'None'));
         channels.forEach(c => {
           const opt = h('option', { value: c.id }, '#' + c.name);
           if (isEdit && existingData.statusChannelId === c.id) opt.selected = true;

@@ -3,10 +3,12 @@ const fs = require('node:fs');
 const express = require('express');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
+const { ChannelType } = require('discord.js');
 const { SETTINGS_SCHEMA, CATEGORIES } = require('./settingsSchema');
 const { resolveTierFromGrants, hasAccess } = require('./permissions');
 const { findEntriesByServer, mutateGuildEntry, loadServersFile, ensureGuildEntry } = require('./config');
 const { findAgentsByOwner, claimAgent } = require('./agentStore');
+const { slugForChannel } = require('./statusChannel');
 
 const SITE_DIR = path.join(__dirname, 'site');
 const ERROR_PAGE_TEMPLATE = fs.readFileSync(path.join(SITE_DIR, 'error.html'), 'utf8');
@@ -332,6 +334,18 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       }
     }
 
+    // Labels only have to be unique per guild, but that guild can easily
+    // have servers from several different agent owners attached to it --
+    // the agent's own UI defaults every new server to the label "main", so
+    // without this check two different people's servers can silently
+    // collide and corrupt each other's tracked status-channel state
+    // (everything downstream keys per-server state off guildId+label).
+    const guildEntry = config.servers.find((s) => s.guildId === guildId);
+    const labelTaken = guildEntry?.servers?.some((s) => s.label === label && !(s.agentId === agentId && s.serverId === serverId));
+    if (labelTaken) {
+      return res.status(400).json({ success: false, error: `Another server in this guild already uses the label "${label}". Pick a different label.` });
+    }
+
     ensureGuildEntry(config.guildsPath, config.rolesPath, config.serversPath, guildId);
     const entry = mutateGuildEntry(config.serversPath, guildId, (e) => {
       e.servers = e.servers || [];
@@ -354,6 +368,42 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     config.servers = loadServersFile(config.serversPath);
 
     res.json({ success: true, guildId, entry });
+  });
+
+  // Explicit channel creation -- the dashboard's "Create Channel" button.
+  // Channels are never created silently by the tick loop anymore; this is
+  // the only path that creates one, and it always happens as a direct
+  // result of someone clicking a button, with a name tied to the specific
+  // server it's for (a guild's status/log channels can hold servers
+  // belonging to different agent owners, so a generic name would be
+  // ambiguous about whose server is whose).
+  app.post('/dashboard/servers/:agentId/:serverId/channels', async (req, res) => {
+    const { agentId, serverId } = req.params;
+    const session = requireOwnedAgent(req, res, agentId);
+    if (!session) return;
+
+    const { guildId, kind, label } = req.body || {};
+    if (typeof guildId !== 'string' || (kind !== 'status' && kind !== 'log')) {
+      return res.status(400).json({ success: false, error: 'guildId and a valid kind ("status" or "log") are required.' });
+    }
+
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) {
+      return res.status(404).json({ success: false, error: 'The bot is not in that guild.' });
+    }
+    try {
+      await guild.members.fetch(session.userId);
+    } catch {
+      return res.status(404).json({ success: false, error: 'You are not a member of that guild.' });
+    }
+
+    const name = `${slugForChannel(label || 'server')}-${kind}`;
+    try {
+      const created = await guild.channels.create({ name, type: ChannelType.GuildText, reason: `Palworld ${kind} channel` });
+      res.json({ success: true, id: created.id, name: created.name });
+    } catch (err) {
+      res.status(502).json({ success: false, error: `Failed to create channel: ${err.message}` });
+    }
   });
 
   app.delete('/dashboard/servers/:agentId/:serverId/guilds/:guildId', (req, res) => {

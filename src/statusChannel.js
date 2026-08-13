@@ -1,17 +1,15 @@
 // Live status dashboard: one auto-updating channel per statusChannelId,
 // holding a status+players message pair for every server that shares it
-// (edited in place on a fixed interval, not reposted), plus a channel name
-// showing how many of that channel's servers are currently online. Servers
-// with no statusChannelId assigned each get their own channel. If a
-// configured channel/message has been deleted, one is (re)created
-// automatically and the new ID is written back to config/servers.json --
-// the human only ever has to *edit* that file afterward to point at a
-// different existing channel.
+// (edited in place on a fixed interval, not reposted). Servers with no
+// statusChannelId configured are skipped entirely -- channels are created
+// explicitly via the dashboard's "Create Channel" button
+// (src/webServer.js), never silently by this tick loop. If a configured
+// channel gets deleted, its servers are just skipped again until someone
+// points them at a channel through the dashboard.
 const fs = require('node:fs');
 const path = require('node:path');
-const { EmbedBuilder, ChannelType } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const pm2 = require('pm2');
-const { mutateServerEntry } = require('./config');
 const { readWorldSettings } = require('./worldSettingsParser');
 const { cleanPlayerId } = require('./playerPoller');
 
@@ -131,7 +129,6 @@ function createStatusChannelManager({
   client,
   getGuildGroups,
   createClient,
-  serversPath,
   statePath,
   getPm2Status = defaultGetPm2Status,
   intervalMs = 10000,
@@ -154,52 +151,37 @@ function createStatusChannelManager({
     writeState(statePath, state);
   }
 
-  // Configured channel missing, deleted, or never set -- (re)create one and
-  // persist the new ID onto every server in this group via
-  // mutateServerEntry so config/servers.json stays the source of truth.
-  async function resolveChannel(guildId, channelId, servers, initialName) {
+  // Explicit only -- channels are created via the dashboard's "Create
+  // Channel" button (src/webServer.js), never silently by this tick loop.
+  // A server with no statusChannelId configured, or one pointing at a
+  // channel that's been deleted, is simply skipped until someone points
+  // it at a real channel again.
+  async function resolveChannel(guildId, channelId) {
+    if (!channelId) return null;
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return null;
 
-    if (channelId) {
-      const existing = await guild.channels.fetch(channelId).catch(() => null);
-      if (existing) {
-        if (!purgedChannels.has(existing.id)) {
-          purgedChannels.add(existing.id);
-          try {
-            const fetchedMsgs = await existing.messages.fetch({ limit: 50 }).catch(() => null);
-            if (fetchedMsgs && fetchedMsgs.size > 0 && typeof existing.bulkDelete === 'function') {
-              await existing.bulkDelete(fetchedMsgs, true).catch(async () => {
-                for (const [, msg] of fetchedMsgs) {
-                  if (msg.author.id === client.user?.id) {
-                    await msg.delete().catch(() => {});
-                  }
-                }
-              });
+    const existing = await guild.channels.fetch(channelId).catch(() => null);
+    if (!existing) return null;
+
+    if (!purgedChannels.has(existing.id)) {
+      purgedChannels.add(existing.id);
+      try {
+        const fetchedMsgs = await existing.messages.fetch({ limit: 50 }).catch(() => null);
+        if (fetchedMsgs && fetchedMsgs.size > 0 && typeof existing.bulkDelete === 'function') {
+          await existing.bulkDelete(fetchedMsgs, true).catch(async () => {
+            for (const [, msg] of fetchedMsgs) {
+              if (msg.author.id === client.user?.id) {
+                await msg.delete().catch(() => {});
+              }
             }
-          } catch {
-            // Ignore purge errors
-          }
+          });
         }
-        return existing;
+      } catch {
+        // Ignore purge errors
       }
     }
-
-    const created = await guild.channels.create({
-      name: initialName,
-      type: ChannelType.GuildText,
-      reason: 'Palworld live status channel',
-    }).catch((err) => {
-      console.error(`statusChannel: failed to create status channel in guild ${guildId}:`, err.message);
-      return null;
-    });
-    if (!created) return null;
-
-    purgedChannels.add(created.id);
-    for (const server of servers) {
-      mutateServerEntry(serversPath, guildId, server.label, (entry) => { entry.statusChannelId = created.id; });
-    }
-    return created;
+    return existing;
   }
 
   // Configured message missing, deleted, or never sent -- send a fresh one
@@ -236,18 +218,10 @@ function createStatusChannelManager({
     const onlineCount = results.filter((r) => r.state === 'online').length;
     const desiredName = guildChannelNameFor(onlineCount, results.length);
 
-    // Prefer our own last-known channel ID (this manager's local state file,
-    // written synchronously the moment a channel is resolved) over
-    // servers[0].statusChannelId, which comes from config.servers in
-    // index.js and only catches up once config/servers.json's file-watcher
-    // reload fires -- not instant, not always reliable depending on the
-    // filesystem. Trusting the stale snapshot here recreated a brand new
-    // channel on every tick until the reload landed. Every server in this
-    // group shares the same channel (or all share "none yet").
-    const trackedChannelId = getEntry(guildId, servers[0].label)?.lastChannelId;
-    const currentChannelId = trackedChannelId || servers[0].statusChannelId;
-
-    const channel = await resolveChannel(guildId, currentChannelId, servers, desiredName);
+    // channelKey is already the resolved effective channel ID (see
+    // tickGuild) -- tracked-vs-config precedence is decided once, up front,
+    // not re-derived here.
+    const channel = await resolveChannel(guildId, channelKey);
     if (!channel) return;
 
     for (const server of servers) {
@@ -280,17 +254,24 @@ function createStatusChannelManager({
   }
 
   async function tickGuild(group) {
-    if (group.servers.length === 0) return;
+    // Effective channel per server: prefer our own last-known channel ID
+    // (this manager's local state file, written synchronously the moment a
+    // channel is resolved) over server.statusChannelId, which comes from
+    // config.servers in index.js and only catches up once
+    // config/servers.json's file-watcher reload fires -- not instant, not
+    // always reliable depending on the filesystem. A server with neither
+    // has nothing to tick -- channel assignment is an explicit dashboard
+    // action now, not something this loop does on its own.
+    const withChannel = group.servers
+      .map((server) => ({ server, channelId: getEntry(group.guildId, server.label)?.lastChannelId || server.statusChannelId }))
+      .filter((x) => x.channelId);
+    if (withChannel.length === 0) return;
 
-    // Servers sharing a statusChannelId render together in one channel
-    // (today's behavior, if configured that way). A server with no channel
-    // assigned yet (null) gets its own -- never silently lumped in with
-    // other unassigned servers, since that grouping would be arbitrary.
+    // Servers sharing a channel render together in one.
     const byChannel = new Map();
-    for (const server of group.servers) {
-      const key = server.statusChannelId || `__new__:${server.label}`;
-      if (!byChannel.has(key)) byChannel.set(key, []);
-      byChannel.get(key).push(server);
+    for (const { server, channelId } of withChannel) {
+      if (!byChannel.has(channelId)) byChannel.set(channelId, []);
+      byChannel.get(channelId).push(server);
     }
 
     for (const [key, servers] of byChannel) {

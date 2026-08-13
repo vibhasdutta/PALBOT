@@ -35,6 +35,11 @@ const { createWebServer } = require('./webServer');
 const BOT_PM2_NAME = 'palworld-bot';
 
 const config = loadConfig();
+// ponytail: temporary diagnostic for a data-loss bug where servers.json
+// looks empty to the bot on some restarts even though `cat` shows real
+// data -- remove once the root cause (path mismatch vs. a genuine
+// race/write issue) is confirmed.
+console.log(`[diag] serversPath=${config.serversPath} exists=${fs.existsSync(config.serversPath)} guildsLoaded=${config.servers.length} guildIds=${JSON.stringify(config.servers.map((s) => s.guildId))}`);
 const commands = loadCommands();
 const agentRegistry = createAgentRegistry({ agentsPath: config.agentsPath });
 const commandData = [...commands.values()].map((c) => c.data.toJSON());
