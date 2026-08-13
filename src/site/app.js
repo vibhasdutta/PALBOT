@@ -223,6 +223,17 @@
       )
     );
 
+    const logRow = h('div', { className: 'form-row' },
+      h('label', null, 'Log Channel'),
+      h('div', { style: 'display:flex;gap:0.5rem;' },
+        h('select', { id: 'botLogChannelSelect', style: 'flex:1;' },
+          h('option', { value: '' }, 'None'),
+          h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels…')
+        ),
+        h('button', { type: 'button', className: 'btn btn-secondary btn-sm', onClick: () => createChannel('log') }, '+ Create')
+      )
+    );
+
     // Creates a channel/category immediately (POST .../channels) and
     // selects it in the relevant dropdown -- the user still has to hit
     // Save/Attach to actually persist the status channel choice, same as
@@ -242,6 +253,13 @@
         if (kind === 'category') {
           const sel = document.getElementById('statusCategorySelect');
           const opt = h('option', { value: result.id }, result.name);
+          sel.append(opt);
+          sel.value = result.id;
+          return;
+        }
+        if (kind === 'log') {
+          const sel = document.getElementById('botLogChannelSelect');
+          const opt = h('option', { value: result.id }, '#' + result.name);
           sel.append(opt);
           sel.value = result.id;
           return;
@@ -303,6 +321,15 @@
           statusSel.append(opt);
         });
 
+        const logSel = document.getElementById('botLogChannelSelect');
+        logSel.innerHTML = '';
+        logSel.append(h('option', { value: '' }, 'None'));
+        channels.forEach(c => {
+          const opt = h('option', { value: c.id }, '#' + c.name);
+          if (isEdit && existingData.botLogChannelId === c.id) opt.selected = true;
+          logSel.append(opt);
+        });
+
         const catSel = document.getElementById('statusCategorySelect');
         catSel.innerHTML = '';
         catSel.append(h('option', { value: '' }, 'None'));
@@ -347,10 +374,8 @@
             common: { roleIds: commonRoles, userIds: commonUserIds },
           },
           statusChannelId: (document.getElementById('statusChannelSelect').value && document.getElementById('statusChannelSelect').value !== '__loading__') ? document.getElementById('statusChannelSelect').value : null,
+          botLogChannelId: (document.getElementById('botLogChannelSelect').value && document.getElementById('botLogChannelSelect').value !== '__loading__') ? document.getElementById('botLogChannelSelect').value : null,
           categoryId: (document.getElementById('statusCategorySelect').value && document.getElementById('statusCategorySelect').value !== '__loading__') ? document.getElementById('statusCategorySelect').value : null,
-          // logChannelId is omitted entirely -- log channels are fully
-          // automatic and guild-wide now (see ensureLogChannel in
-          // index.js), no per-server override exists anymore.
         };
         try {
           await api('/dashboard/servers/' + agentId + '/' + serverId + '/guilds', {
@@ -367,7 +392,7 @@
       h('button', { className: 'btn btn-secondary', onClick: () => panel.remove() }, 'Cancel')
     );
 
-    panel.append(guildRow, labelRow, categoryRow, statusRow, adminGroup, opGroup, commonGroup, actions);
+    panel.append(guildRow, labelRow, categoryRow, statusRow, logRow, adminGroup, opGroup, commonGroup, actions);
     card.append(panel);
 
     if (isEdit) {

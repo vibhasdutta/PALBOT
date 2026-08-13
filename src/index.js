@@ -165,35 +165,6 @@ function resolveServerCtx(guildId, label) {
   return { ctx: null, errorMessage };
 }
 
-// The status channel already auto-creates itself lazily and idempotently
-// (statusChannel.js checks for an existing channel before creating). This
-// mirrors that: idempotent regardless of how many times or how often it's
-// called -- skips creating anything if the guild's botLogChannelId already
-// points at a channel that still exists, and self-heals (creates a fresh
-// one) if that channel was deleted. Called on every onboardGuild pass
-// (including every bot restart, not just "first time seen") specifically
-// so it never depends on a fragile one-shot "was this guild new" flag --
-// relying on that flag firing exactly once was what let duplicate
-// "palworld-logs" channels get created if it ever fired more than once.
-async function ensureLogChannel(guildId) {
-  const guild = client.guilds.cache.get(guildId);
-  if (!guild) return;
-
-  const entry = config.servers.find((s) => s.guildId === guildId);
-  if (entry?.botLogChannelId) {
-    const existing = await guild.channels.fetch(entry.botLogChannelId).catch(() => null);
-    if (existing) return;
-  }
-
-  try {
-    const created = await guild.channels.create({ name: 'palworld-logs', type: ChannelType.GuildText, reason: 'Palworld bot log channel' });
-    mutateGuildEntry(config.serversPath, guildId, (e) => { e.botLogChannelId = created.id; });
-    config.servers = loadServersFile(config.serversPath);
-  } catch (err) {
-    console.error(`Failed to create log channel for guild ${guildId}:`, err.message);
-  }
-}
-
 async function onboardGuild(guildId, guildName) {
   const added = ensureGuildEntry(config.serversPath, guildId);
   if (added) {
@@ -202,7 +173,6 @@ async function onboardGuild(guildId, guildName) {
     config.roles = rolesFromServers(config.servers);
     console.log(`Joined "${guildName}" (${guildId}) — added a stub entry to config/servers.json. This guild cannot control any Palworld server until config/servers.json is filled in for it.`);
   }
-  await ensureLogChannel(guildId);
 
   try {
     const data = await rest.put(Routes.applicationGuildCommands(config.clientId, guildId), { body: commandData });

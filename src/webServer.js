@@ -19,9 +19,11 @@ const WEB_SECRET = process.env.WEB_SECRET || crypto.randomBytes(32).toString('he
 const WEB_HOST = process.env.WEB_HOST || 'localhost';
 const WEB_SCHEME = process.env.WEB_SCHEME || (WEB_HOST !== 'localhost' && WEB_HOST !== '127.0.0.1' ? 'https' : 'http');
 const WEB_BASE_URL = process.env.WEB_BASE_URL || (
-  WEB_SCHEME === 'https'
+  (WEB_SCHEME === 'https' && WEB_PORT == 443)
     ? `https://${WEB_HOST}`
-    : `http://${WEB_HOST}:${WEB_PORT}`
+    : (WEB_SCHEME === 'http' && WEB_PORT == 80)
+      ? `http://${WEB_HOST}`
+      : `${WEB_SCHEME}://${WEB_HOST}:${WEB_PORT}`
 );
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 
@@ -224,6 +226,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
               label: srv?.label || s.label,
               tierGrants: srv?.tierGrants || null,
               statusChannelId: srv?.statusChannelId || null,
+              botLogChannelId: ge.botLogChannelId || null,
               categoryId: ge.categoryId || null,
             };
           });
@@ -335,6 +338,12 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
         return res.status(400).json({ success: false, error: `Channel ${body.statusChannelId} does not exist in this guild.` });
       }
     }
+    if (typeof body.botLogChannelId === 'string' && body.botLogChannelId.trim() !== '' && body.botLogChannelId !== '__loading__') {
+      const ch = await client.channels.fetch(body.botLogChannelId).catch(() => null);
+      if (!ch || ch.guildId !== guildId) {
+        return res.status(400).json({ success: false, error: `Log channel ${body.botLogChannelId} does not exist in this guild.` });
+      }
+    }
     if (typeof body.categoryId === 'string' && body.categoryId.trim() !== '' && body.categoryId !== '__loading__') {
       const cat = await client.channels.fetch(body.categoryId).catch(() => null);
       if (!cat || cat.guildId !== guildId || cat.type !== ChannelType.GuildCategory) {
@@ -360,6 +369,9 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       // are grouped under. Preserve the existing value unless the request
       // explicitly includes the field.
       e.categoryId = 'categoryId' in body ? (body.categoryId || null) : e.categoryId;
+      if ('botLogChannelId' in body) {
+        e.botLogChannelId = body.botLogChannelId || null;
+      }
 
       e.servers = e.servers || [];
       const existingIndex = e.servers.findIndex((s) => s.agentId === agentId && s.serverId === serverId);
@@ -395,8 +407,8 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     if (!session) return;
 
     const { guildId, kind, label, categoryId } = req.body || {};
-    if (typeof guildId !== 'string' || (kind !== 'status' && kind !== 'category')) {
-      return res.status(400).json({ success: false, error: 'guildId and a valid kind ("status" or "category") are required.' });
+    if (typeof guildId !== 'string' || (kind !== 'status' && kind !== 'category' && kind !== 'log')) {
+      return res.status(400).json({ success: false, error: 'guildId and a valid kind ("status", "log", or "category") are required.' });
     }
 
     const guild = client.guilds.cache.get(guildId);
@@ -415,11 +427,9 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
         return res.json({ success: true, id: created.id, name: created.name });
       }
 
-      // kind === 'status' -- a category groups multiple servers' status
-      // channels together (possibly from different agent owners) without
-      // combining them into one channel; each server still always gets
-      // its own.
-      const opts = { name: `${slugForChannel(label || 'server')}-status`, type: ChannelType.GuildText, reason: 'Palworld status channel' };
+      const suffix = kind === 'log' ? 'logs' : 'status';
+      const reason = kind === 'log' ? 'Palworld bot log channel' : 'Palworld status channel';
+      const opts = { name: `${slugForChannel(label || 'server')}-${suffix}`, type: ChannelType.GuildText, reason };
       if (typeof categoryId === 'string' && categoryId.trim()) {
         const parent = await guild.channels.fetch(categoryId).catch(() => null);
         if (parent && parent.type === ChannelType.GuildCategory) opts.parent = categoryId;
