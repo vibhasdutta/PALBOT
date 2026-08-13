@@ -126,12 +126,14 @@ function wireCopyButtons() {
         await navigator.clipboard.writeText(target.textContent);
       } catch {
         // Clipboard API unavailable (e.g. non-HTTPS context) -- fall back
-        // to selecting the text so the user can copy it manually.
+        // to the deprecated-but-still-supported execCommand copy.
         const range = document.createRange();
         range.selectNodeContents(target);
         const selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
+        document.execCommand('copy');
+        selection.removeAllRanges();
       }
       const original = btn.textContent;
       btn.textContent = 'Copied!';

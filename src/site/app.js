@@ -307,7 +307,9 @@
         catSel.innerHTML = '';
         catSel.append(h('option', { value: '' }, 'None'));
         categories.forEach(c => {
-          catSel.append(h('option', { value: c.id }, c.name));
+          const opt = h('option', { value: c.id }, c.name);
+          if (isEdit && existingData.categoryId === c.id) opt.selected = true;
+          catSel.append(opt);
         });
 
         const adminCon = document.getElementById('adminRoleContainer');
@@ -345,11 +347,10 @@
             common: { roleIds: commonRoles, userIds: commonUserIds },
           },
           statusChannelId: (document.getElementById('statusChannelSelect').value && document.getElementById('statusChannelSelect').value !== '__loading__') ? document.getElementById('statusChannelSelect').value : null,
-          // logChannelId is intentionally omitted -- log channels are
-          // automatic now (see the comment above categoryRow), so the
-          // dashboard never sends this field. The backend preserves
-          // whatever's already there when a field is left out of the
-          // request body entirely.
+          categoryId: (document.getElementById('statusCategorySelect').value && document.getElementById('statusCategorySelect').value !== '__loading__') ? document.getElementById('statusCategorySelect').value : null,
+          // logChannelId is omitted entirely -- log channels are fully
+          // automatic and guild-wide now (see ensureLogChannel in
+          // index.js), no per-server override exists anymore.
         };
         try {
           await api('/dashboard/servers/' + agentId + '/' + serverId + '/guilds', {

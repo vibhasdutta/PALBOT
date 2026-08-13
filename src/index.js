@@ -98,8 +98,8 @@ function resolveServerCtx(guildId, label) {
   // calling ctx.auditLog.appendAuditEntry({guildId, ...}) exactly as they
   // do today, unaware this wrapper exists. guildId is attached here too --
   // findGuildServer's own server objects don't carry it, but
-  // notify.serverLog needs it to fall back to the guild's bot-wide log
-  // channel when the server has no explicit logChannelId override.
+  // notify.serverLog needs it to resolve the guild's one auto-created log
+  // channel.
   const scopedAuditLog = server ? {
     appendAuditEntry: (entry) => auditLog.appendAuditEntry({ ...entry, server: { ...server, guildId } }),
   } : null;

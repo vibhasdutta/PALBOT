@@ -76,13 +76,10 @@ function normalizeServer(server) {
     agentId: server.agentId || null,
     serverId: server.serverId || null,
     tierGrants: server.tierGrants || null,
-    // Set by statusChannel.js/notify.js. null means "not assigned yet" --
-    // statusChannelId: null auto-creates a dedicated channel on this
-    // server's first status tick; logChannelId: null means this server's
-    // events are silently dropped (postToChannel no-ops on a falsy ID)
-    // until someone sets it, matching "no automatic migration."
+    // Set by statusChannel.js/webServer.js. null means "not assigned yet" --
+    // the dashboard's "+ Create" button is the only thing that sets this
+    // (see statusRow in site/app.js); there's no automatic fallback.
     statusChannelId: server.statusChannelId || null,
-    logChannelId: server.logChannelId || null,
   };
 }
 
@@ -95,10 +92,16 @@ function loadServersFile(serversPath) {
     // resulting ID back here via mutateGuildEntry -- the human only ever
     // needs to *edit* this to point at a different existing channel.
     statusChannelId: entry.statusChannelId || null,
-    // Bot-wide events only (process restarted, pre-server-resolution access
-    // denials, /operator grants) -- per-server events use each server's own
-    // logChannelId instead. Hand-set by editing this file directly.
+    // Every log event for every server in this guild -- bot-wide events
+    // (restart, access denials, /operator grants) and per-server events
+    // alike -- goes to this one auto-created channel (see ensureLogChannel
+    // in index.js). No per-server override; one channel per guild, always.
     botLogChannelId: entry.botLogChannelId || null,
+    // The Discord category (channel folder) this guild's status channels
+    // get organized under, if any. Set via the dashboard's "Status
+    // Category" picker (see webServer.js's guilds POST handler) -- purely
+    // cosmetic grouping, statusChannel.js doesn't read this itself.
+    categoryId: entry.categoryId || null,
     // Guild-wide admin/operator/common role grants (was roles.json) -- the
     // fallback tier check for commands that don't target a specific server,
     // and what /operator manages.

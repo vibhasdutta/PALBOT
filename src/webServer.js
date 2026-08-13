@@ -224,7 +224,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
               label: srv?.label || s.label,
               tierGrants: srv?.tierGrants || null,
               statusChannelId: srv?.statusChannelId || null,
-              logChannelId: srv?.logChannelId || null,
+              categoryId: ge.categoryId || null,
             };
           });
           return { ...s, attachedGuilds };
@@ -329,13 +329,16 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     }
 
     // Validate channel IDs if provided as non-null strings
-    for (const field of ['statusChannelId', 'logChannelId']) {
-      const val = body[field];
-      if (typeof val === 'string' && val.trim() !== '' && val !== '__loading__') {
-        const ch = await client.channels.fetch(val).catch(() => null);
-        if (!ch || ch.guildId !== guildId) {
-          return res.status(400).json({ success: false, error: `Channel ${val} does not exist in this guild.` });
-        }
+    if (typeof body.statusChannelId === 'string' && body.statusChannelId.trim() !== '' && body.statusChannelId !== '__loading__') {
+      const ch = await client.channels.fetch(body.statusChannelId).catch(() => null);
+      if (!ch || ch.guildId !== guildId) {
+        return res.status(400).json({ success: false, error: `Channel ${body.statusChannelId} does not exist in this guild.` });
+      }
+    }
+    if (typeof body.categoryId === 'string' && body.categoryId.trim() !== '' && body.categoryId !== '__loading__') {
+      const cat = await client.channels.fetch(body.categoryId).catch(() => null);
+      if (!cat || cat.guildId !== guildId || cat.type !== ChannelType.GuildCategory) {
+        return res.status(400).json({ success: false, error: `Category ${body.categoryId} does not exist in this guild.` });
       }
     }
 
@@ -353,20 +356,23 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
 
     ensureGuildEntry(config.serversPath, guildId);
     const entry = mutateGuildEntry(config.serversPath, guildId, (e) => {
+      // Guild-level: which category (if any) this guild's status channels
+      // are grouped under. Preserve the existing value unless the request
+      // explicitly includes the field.
+      e.categoryId = 'categoryId' in body ? (body.categoryId || null) : e.categoryId;
+
       e.servers = e.servers || [];
       const existingIndex = e.servers.findIndex((s) => s.agentId === agentId && s.serverId === serverId);
       const serverEntry = { label, agentId, serverId, tierGrants };
 
       // Channel ID handling: on insert default to null; on update preserve
-      // existing values unless the request explicitly includes the field.
+      // the existing value unless the request explicitly includes the field.
       if (existingIndex >= 0) {
         const existing = e.servers[existingIndex];
         serverEntry.statusChannelId = 'statusChannelId' in body ? body.statusChannelId : existing.statusChannelId;
-        serverEntry.logChannelId = 'logChannelId' in body ? body.logChannelId : existing.logChannelId;
         e.servers[existingIndex] = serverEntry;
       } else {
         serverEntry.statusChannelId = body.statusChannelId || null;
-        serverEntry.logChannelId = body.logChannelId || null;
         e.servers.push(serverEntry);
       }
     });

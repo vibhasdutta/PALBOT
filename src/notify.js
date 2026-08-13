@@ -170,17 +170,14 @@ async function postToChannel(client, channelId, entry) {
   }
 }
 
-// botLog resolves a bot-wide events channel from the guild (process
-// restarted, pre-server-resolution access denials, /operator grants).
-// serverLog prefers the server's own explicit logChannelId if one is set
-// (a manual override, still supported), but falls back to the guild's
-// auto-created bot-wide channel (ensureLogChannel in index.js) otherwise --
-// logs just work automatically per guild, no per-server dashboard setup
-// required.
+// Every event -- bot-wide (process restarted, pre-server-resolution access
+// denials, /operator grants) and per-server alike -- goes to the same
+// auto-created guild channel (ensureLogChannel in index.js). No per-server
+// override; logs just work automatically per guild, no dashboard setup.
 function createNotifier(client, getBotLogChannelId) {
   return {
     botLog: (guildId, entry) => postToChannel(client, getBotLogChannelId(guildId), entry),
-    serverLog: (server, entry) => postToChannel(client, server?.logChannelId || getBotLogChannelId(server?.guildId), entry),
+    serverLog: (server, entry) => postToChannel(client, getBotLogChannelId(server?.guildId), entry),
   };
 }
 
