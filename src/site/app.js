@@ -554,6 +554,81 @@
     }
   }
 
+  function buildOwnerPanel(agent, card) {
+    const old = card.querySelector('.owner-panel');
+    if (old) { old.remove(); return; }
+
+    const panel = h('div', { className: 'form-panel owner-panel', style: 'margin-top:0.75rem;' });
+    panel.append(h('h4', { style: 'margin-top:0;margin-bottom:0.5rem;' }, '👑 Agent Ownership Settings'));
+
+    const coOwnerWrapper = buildTagInput('coOwner', agent.coOwnerIds || []);
+    const coOwnerRow = h('div', { className: 'form-row' },
+      h('label', null, 'Co-Owners (Discord User IDs with full management access)'),
+      coOwnerWrapper
+    );
+
+    const actions = h('div', { className: 'form-actions', style: 'display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;' },
+      h('button', { className: 'btn btn-primary btn-sm', onClick: async () => {
+        const targetIds = coOwnerWrapper.getUserIds();
+        const currentIds = agent.coOwnerIds || [];
+        const toAdd = targetIds.filter(id => !currentIds.includes(id));
+        const toRemove = currentIds.filter(id => !targetIds.includes(id));
+        try {
+          for (const id of toAdd) {
+            await api('/dashboard/agents/' + agent.agentId + '/co-owners', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'add', coOwnerId: id }),
+            });
+          }
+          for (const id of toRemove) {
+            await api('/dashboard/agents/' + agent.agentId + '/co-owners', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'remove', coOwnerId: id }),
+            });
+          }
+          showBanner(content, 'Co-owners updated.', 'success');
+          loadServers();
+        } catch (err) {
+          showBanner(panel, err.message, 'error');
+        }
+      }}, 'Save Co-Owners'),
+      h('button', { className: 'btn btn-secondary btn-sm', onClick: async () => {
+        const newOwner = prompt('Enter the Discord User ID of the new Primary Owner:');
+        if (!newOwner) return;
+        const clean = newOwner.trim().replace(/\D/g, '');
+        if (clean.length < 15) { alert('Invalid Discord User ID'); return; }
+        if (!confirm('Transfer primary ownership of agent "' + agent.agentId + '" to Discord ID ' + clean + '?')) return;
+        try {
+          await api('/dashboard/agents/' + agent.agentId + '/transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newOwnerId: clean }),
+          });
+          showBanner(content, 'Ownership transferred successfully.', 'success');
+          loadServers();
+        } catch (err) {
+          showBanner(panel, err.message, 'error');
+        }
+      }}, '🔄 Transfer Ownership'),
+      h('button', { className: 'btn btn-danger btn-sm', onClick: async () => {
+        if (!confirm('Unclaim agent "' + agent.agentId + '"? Anyone with the agent token can claim it again.')) return;
+        try {
+          await api('/dashboard/agents/' + agent.agentId + '/unclaim', { method: 'POST' });
+          showBanner(content, 'Agent unclaimed.', 'success');
+          loadServers();
+        } catch (err) {
+          showBanner(panel, err.message, 'error');
+        }
+      }}, '🔓 Unclaim Agent'),
+      h('button', { className: 'btn btn-secondary btn-sm', onClick: () => panel.remove() }, 'Cancel')
+    );
+
+    panel.append(coOwnerRow, actions);
+    card.append(panel);
+  }
+
   async function loadServers() {
     try {
       const data = await api('/dashboard/servers');
@@ -590,10 +665,13 @@
             card.append(h('div', { className: 'no-guilds' }, 'Not attached to any guild yet.'));
           }
 
-          const btnGroup = h('div', { style: 'display:flex;gap:0.5rem;margin-top:0.75rem;' },
+          const btnGroup = h('div', { style: 'display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;' },
             h('button', { className: 'btn btn-primary', onClick: () => buildAttachForm(agent.agentId, server.serverId, server.label, null, card) }, '+ Attach to a guild'),
             h('button', { className: 'btn btn-secondary', onClick: () => buildSettingsPanel(agent.agentId, server.serverId, server.label, card) }, 'World Settings')
           );
+          if (agent.isPrimaryOwner) {
+            btnGroup.append(h('button', { className: 'btn btn-secondary', onClick: () => buildOwnerPanel(agent, card) }, '👑 Manage Ownership'));
+          }
           card.append(btnGroup);
           content.append(card);
         }

@@ -7,7 +7,7 @@ const { ChannelType } = require('discord.js');
 const { SETTINGS_SCHEMA, CATEGORIES } = require('./settingsSchema');
 const { resolveTierFromGrants, hasAccess } = require('./permissions');
 const { findEntriesByServer, mutateGuildEntry, loadServersFile, ensureGuildEntry } = require('./config');
-const { findAgentsByOwner, claimAgent } = require('./agentStore');
+const { findAgentsByOwner, claimAgent, readAgents, findAgent, transferAgent, unclaimAgent, addCoOwner, removeCoOwner } = require('./agentStore');
 const { slugForChannel } = require('./statusChannel');
 
 const SITE_DIR = path.join(__dirname, 'site');
@@ -172,6 +172,65 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     }
   });
 
+  app.post('/dashboard/agents/:agentId/transfer', (req, res) => {
+    const { agentId } = req.params;
+    const session = requirePrimaryOwner(req, res, agentId);
+    if (!session) return;
+
+    const { newOwnerId } = req.body || {};
+    if (typeof newOwnerId !== 'string' || !newOwnerId.trim()) {
+      return res.status(400).json({ success: false, error: 'newOwnerId is required.' });
+    }
+
+    const cleanNewOwner = newOwnerId.trim().replace(/\D/g, '');
+    if (cleanNewOwner.length < 15) {
+      return res.status(400).json({ success: false, error: 'Invalid Discord User ID for new owner.' });
+    }
+
+    const updated = transferAgent(config.agentsPath, agentId, session.userId, cleanNewOwner);
+    if (!updated) {
+      return res.status(400).json({ success: false, error: 'Failed to transfer ownership.' });
+    }
+    res.json({ success: true, agentId: updated.agentId, ownerId: updated.ownerId });
+  });
+
+  app.post('/dashboard/agents/:agentId/unclaim', (req, res) => {
+    const { agentId } = req.params;
+    const session = requirePrimaryOwner(req, res, agentId);
+    if (!session) return;
+
+    const updated = unclaimAgent(config.agentsPath, agentId, session.userId);
+    if (!updated) {
+      return res.status(400).json({ success: false, error: 'Failed to unclaim agent.' });
+    }
+    res.json({ success: true, agentId: updated.agentId });
+  });
+
+  app.post('/dashboard/agents/:agentId/co-owners', (req, res) => {
+    const { agentId } = req.params;
+    const session = requirePrimaryOwner(req, res, agentId);
+    if (!session) return;
+
+    const { action, coOwnerId } = req.body || {};
+    if (typeof coOwnerId !== 'string' || !coOwnerId.trim() || (action !== 'add' && action !== 'remove')) {
+      return res.status(400).json({ success: false, error: 'action ("add" or "remove") and coOwnerId are required.' });
+    }
+
+    const cleanCoOwner = coOwnerId.trim().replace(/\D/g, '');
+    if (cleanCoOwner.length < 15) {
+      return res.status(400).json({ success: false, error: 'Invalid Discord User ID for co-owner.' });
+    }
+
+    const updated = action === 'add'
+      ? addCoOwner(config.agentsPath, agentId, session.userId, cleanCoOwner)
+      : removeCoOwner(config.agentsPath, agentId, session.userId, cleanCoOwner);
+
+    if (!updated) {
+      return res.status(400).json({ success: false, error: 'Failed to update co-owners.' });
+    }
+    res.json({ success: true, agentId: updated.agentId, coOwnerIds: updated.coOwnerIds });
+  });
+
   app.post('/dashboard/claim', (req, res) => {
     const session = requireDashboardSession(req, res);
     if (!session) return;
@@ -205,34 +264,86 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     res.json({ success: true, username: session.username, avatarUrl, userId: session.userId });
   });
 
+  function requirePrimaryOwner(req, res, agentId) {
+    const session = requireDashboardSession(req, res);
+    if (!session) return null;
+    const agent = findAgent(config.agentsPath, agentId);
+    if (!agent || agent.ownerId !== session.userId) {
+      res.status(403).json({ success: false, error: 'Only the primary owner of this agent can perform this action.' });
+      return null;
+    }
+    return session;
+  }
+
+  function hasServerAdminAccess(sessionUserId, agentId, serverId = null) {
+    const isOwner = findAgentsByOwner(config.agentsPath, sessionUserId).some((a) => a.agentId === agentId);
+    if (isOwner) return true;
+
+    return config.servers.some((entry) => {
+      const guild = client.guilds.cache.get(entry.guildId);
+      const member = guild?.members?.cache?.get(sessionUserId);
+      const roleIds = member?.roles?.cache ? [...member.roles.cache.keys()] : [];
+
+      return entry.servers.some((server) => {
+        if (server.agentId !== agentId) return false;
+        if (serverId && server.serverId !== serverId) return false;
+        const tier = resolveTierFromGrants({ roleIds, userId: sessionUserId }, server.tierGrants);
+        return hasAccess(tier, 'admin');
+      });
+    });
+  }
+
+  function requireServerAdminOrOwner(req, res, agentId, serverId = null) {
+    const session = requireDashboardSession(req, res);
+    if (!session) return null;
+    if (!hasServerAdminAccess(session.userId, agentId, serverId)) {
+      res.status(403).json({ success: false, error: 'You do not have admin access to this server.' });
+      return null;
+    }
+    return session;
+  }
+
   app.get('/dashboard/servers', (req, res) => {
     const session = requireDashboardSession(req, res);
     if (!session) return;
 
-    const agents = findAgentsByOwner(config.agentsPath, session.userId).map((a) => {
-      const servers = agentRegistry ? agentRegistry.listServers(a.agentId) : [];
-      return {
-        agentId: a.agentId,
-        servers: servers.map((s) => {
-          const entries = findEntriesByServer(config.servers, a.agentId, s.serverId);
-          const attachedGuilds = entries.map((ge) => {
-            const srv = ge.servers.find((x) => x.agentId === a.agentId && x.serverId === s.serverId);
-            const guild = client.guilds.cache.get(ge.guildId);
-            return {
-              guildId: ge.guildId,
-              guildName: guild ? guild.name : ge.guildId,
-              label: srv?.label || s.label,
-              tierGrants: srv?.tierGrants || null,
-              statusChannelId: srv?.statusChannelId || null,
-              botLogChannelId: ge.botLogChannelId || null,
-              categoryId: ge.categoryId || null,
-            };
-          });
-          return { ...s, attachedGuilds };
-        }),
-      };
-    });
-    res.json({ success: true, agents });
+    const allAgents = readAgents(config.agentsPath);
+    const visibleAgents = [];
+
+    for (const a of allAgents) {
+      const isOwner = a.ownerId === session.userId;
+      const liveServers = agentRegistry ? agentRegistry.listServers(a.agentId) : [];
+
+      const accessibleServers = liveServers.filter((s) => isOwner || hasServerAdminAccess(session.userId, a.agentId, s.serverId));
+
+      if (accessibleServers.length > 0) {
+        visibleAgents.push({
+          agentId: a.agentId,
+          ownerId: a.ownerId,
+          isPrimaryOwner: a.ownerId === session.userId,
+          coOwnerIds: Array.isArray(a.coOwnerIds) ? a.coOwnerIds : [],
+          servers: accessibleServers.map((s) => {
+            const entries = findEntriesByServer(config.servers, a.agentId, s.serverId);
+            const attachedGuilds = entries.map((ge) => {
+              const srv = ge.servers.find((x) => x.agentId === a.agentId && x.serverId === s.serverId);
+              const guild = client.guilds.cache.get(ge.guildId);
+              return {
+                guildId: ge.guildId,
+                guildName: guild ? guild.name : ge.guildId,
+                label: srv?.label || s.label,
+                tierGrants: srv?.tierGrants || null,
+                statusChannelId: srv?.statusChannelId || null,
+                botLogChannelId: ge.botLogChannelId || null,
+                categoryId: ge.categoryId || null,
+              };
+            });
+            return { ...s, attachedGuilds };
+          }),
+        });
+      }
+    }
+
+    res.json({ success: true, agents: visibleAgents });
   });
 
   app.get('/dashboard/guilds', async (req, res) => {
@@ -294,23 +405,9 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     res.json({ success: true, channels, categories, roles });
   });
 
-  // Verifies the requesting user actually owns agentId before letting them
-  // grant/revoke anything about one of its servers -- ownership, not just
-  // being logged in, is what authorizes dashboard writes.
-  function requireOwnedAgent(req, res, agentId) {
-    const session = requireDashboardSession(req, res);
-    if (!session) return null;
-    const owned = findAgentsByOwner(config.agentsPath, session.userId).some((a) => a.agentId === agentId);
-    if (!owned) {
-      res.status(403).json({ success: false, error: 'You do not own this agent.' });
-      return null;
-    }
-    return session;
-  }
-
   app.post('/dashboard/servers/:agentId/:serverId/guilds', async (req, res) => {
     const { agentId, serverId } = req.params;
-    const session = requireOwnedAgent(req, res, agentId);
+    const session = requireServerAdminOrOwner(req, res, agentId, serverId);
     if (!session) return;
 
     const body = req.body || {};
@@ -401,7 +498,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
   // handled here at all.
   app.post('/dashboard/servers/:agentId/:serverId/channels', async (req, res) => {
     const { agentId, serverId } = req.params;
-    const session = requireOwnedAgent(req, res, agentId);
+    const session = requireServerAdminOrOwner(req, res, agentId, serverId);
     if (!session) return;
 
     const { guildId, kind, label, categoryId } = req.body || {};
@@ -441,7 +538,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
 
   app.delete('/dashboard/servers/:agentId/:serverId/guilds/:guildId', (req, res) => {
     const { agentId, serverId, guildId } = req.params;
-    const session = requireOwnedAgent(req, res, agentId);
+    const session = requireServerAdminOrOwner(req, res, agentId, serverId);
     if (!session) return;
 
     mutateGuildEntry(config.serversPath, guildId, (e) => {
@@ -454,18 +551,8 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
 
   app.get('/dashboard/servers/:agentId/:serverId/settings', async (req, res) => {
     const { agentId, serverId } = req.params;
-    const session = requireDashboardSession(req, res);
+    const session = requireServerAdminOrOwner(req, res, agentId, serverId);
     if (!session) return;
-
-    const isOwner = findAgentsByOwner(config.agentsPath, session.userId).some((a) => a.agentId === agentId);
-    const grantedAsAdmin = findEntriesByServer(config.servers, agentId, serverId).some((entry) => {
-      const server = entry.servers.find((s) => s.agentId === agentId && s.serverId === serverId);
-      const tier = resolveTierFromGrants({ roleIds: [], userId: session.userId }, server?.tierGrants);
-      return hasAccess(tier, 'admin');
-    });
-    if (!isOwner && !grantedAsAdmin) {
-      return res.status(403).json({ success: false, error: 'You do not have admin access to this server.' });
-    }
 
     try {
       const result = await agentRegistry.sendCommand(agentId, serverId, 'getSettings', {});
@@ -477,18 +564,8 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
 
   app.post('/dashboard/servers/:agentId/:serverId/settings', async (req, res) => {
     const { agentId, serverId } = req.params;
-    const session = requireDashboardSession(req, res);
+    const session = requireServerAdminOrOwner(req, res, agentId, serverId);
     if (!session) return;
-
-    const isOwner = findAgentsByOwner(config.agentsPath, session.userId).some((a) => a.agentId === agentId);
-    const grantedAsAdmin = findEntriesByServer(config.servers, agentId, serverId).some((entry) => {
-      const server = entry.servers.find((s) => s.agentId === agentId && s.serverId === serverId);
-      const tier = resolveTierFromGrants({ roleIds: [], userId: session.userId }, server?.tierGrants);
-      return hasAccess(tier, 'admin');
-    });
-    if (!isOwner && !grantedAsAdmin) {
-      return res.status(403).json({ success: false, error: 'You do not have admin access to this server.' });
-    }
 
     const { settings } = req.body || {};
     if (!settings || typeof settings !== 'object') {

@@ -1,9 +1,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+function normalizeAgent(record) {
+  if (!record) return null;
+  return {
+    ...record,
+    coOwnerIds: Array.isArray(record.coOwnerIds) ? record.coOwnerIds : [],
+  };
+}
+
 function readAgents(agentsPath) {
   try {
-    return JSON.parse(fs.readFileSync(agentsPath, 'utf8'));
+    const list = JSON.parse(fs.readFileSync(agentsPath, 'utf8'));
+    return Array.isArray(list) ? list.map(normalizeAgent) : [];
   } catch {
     return [];
   }
@@ -26,7 +35,7 @@ function registerOrGetAgent(agentsPath, agentId, token) {
   const existing = agents.find((a) => a.agentId === agentId);
   if (existing) return existing;
 
-  const record = { agentId, agentToken: token, ownerId: null };
+  const record = { agentId, agentToken: token, ownerId: null, coOwnerIds: [] };
   agents.push(record);
   writeAgents(agentsPath, agents);
   return record;
@@ -37,7 +46,7 @@ function findAgent(agentsPath, agentId) {
 }
 
 function findAgentsByOwner(agentsPath, ownerId) {
-  return readAgents(agentsPath).filter((a) => a.ownerId === ownerId);
+  return readAgents(agentsPath).filter((a) => a.ownerId === ownerId || (Array.isArray(a.coOwnerIds) && a.coOwnerIds.includes(ownerId)));
 }
 
 // Claims an unowned agent for ownerId if agentId/token match exactly --
@@ -54,4 +63,56 @@ function claimAgent(agentsPath, agentId, token, ownerId) {
   return record;
 }
 
-module.exports = { registerOrGetAgent, findAgent, findAgentsByOwner, claimAgent };
+function transferAgent(agentsPath, agentId, currentOwnerId, newOwnerId) {
+  const agents = readAgents(agentsPath);
+  const record = agents.find((a) => a.agentId === agentId && a.ownerId === currentOwnerId);
+  if (!record) return null;
+  record.ownerId = newOwnerId;
+  // If the new owner was previously in coOwnerIds, remove them from coOwnerIds
+  record.coOwnerIds = (record.coOwnerIds || []).filter((id) => id !== newOwnerId);
+  writeAgents(agentsPath, agents);
+  return record;
+}
+
+function unclaimAgent(agentsPath, agentId, currentOwnerId) {
+  const agents = readAgents(agentsPath);
+  const record = agents.find((a) => a.agentId === agentId && a.ownerId === currentOwnerId);
+  if (!record) return null;
+  record.ownerId = null;
+  record.coOwnerIds = [];
+  writeAgents(agentsPath, agents);
+  return record;
+}
+
+function addCoOwner(agentsPath, agentId, currentOwnerId, coOwnerId) {
+  const agents = readAgents(agentsPath);
+  const record = agents.find((a) => a.agentId === agentId && a.ownerId === currentOwnerId);
+  if (!record) return null;
+  if (!record.coOwnerIds) record.coOwnerIds = [];
+  if (!record.coOwnerIds.includes(coOwnerId) && record.ownerId !== coOwnerId) {
+    record.coOwnerIds.push(coOwnerId);
+  }
+  writeAgents(agentsPath, agents);
+  return record;
+}
+
+function removeCoOwner(agentsPath, agentId, currentOwnerId, coOwnerId) {
+  const agents = readAgents(agentsPath);
+  const record = agents.find((a) => a.agentId === agentId && a.ownerId === currentOwnerId);
+  if (!record) return null;
+  record.coOwnerIds = (record.coOwnerIds || []).filter((id) => id !== coOwnerId);
+  writeAgents(agentsPath, agents);
+  return record;
+}
+
+module.exports = {
+  registerOrGetAgent,
+  findAgent,
+  findAgentsByOwner,
+  claimAgent,
+  readAgents,
+  transferAgent,
+  unclaimAgent,
+  addCoOwner,
+  removeCoOwner,
+};
