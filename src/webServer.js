@@ -275,6 +275,11 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       .map((c) => ({ id: c.id, name: c.name, position: c.rawPosition ?? c.position ?? 0 }))
       .sort((a, b) => a.position - b.position);
 
+    const categories = Array.from(guild.channels?.cache?.values() || [])
+      .filter((c) => c.type === ChannelType.GuildCategory)
+      .map((c) => ({ id: c.id, name: c.name, position: c.rawPosition ?? c.position ?? 0 }))
+      .sort((a, b) => a.position - b.position);
+
     const roles = Array.from(guild.roles?.cache?.values() || [])
       .filter((r) => r.name !== '@everyone' && !r.managed)
       .map((r) => ({
@@ -285,7 +290,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       }))
       .sort((a, b) => b.position - a.position);
 
-    res.json({ success: true, channels, roles });
+    res.json({ success: true, channels, categories, roles });
   });
 
   // Verifies the requesting user actually owns agentId before letting them
@@ -346,7 +351,7 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       return res.status(400).json({ success: false, error: `Another server in this guild already uses the label "${label}". Pick a different label.` });
     }
 
-    ensureGuildEntry(config.guildsPath, config.rolesPath, config.serversPath, guildId);
+    ensureGuildEntry(config.serversPath, guildId);
     const entry = mutateGuildEntry(config.serversPath, guildId, (e) => {
       e.servers = e.servers || [];
       const existingIndex = e.servers.findIndex((s) => s.agentId === agentId && s.serverId === serverId);
@@ -370,21 +375,22 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
     res.json({ success: true, guildId, entry });
   });
 
-  // Explicit channel creation -- the dashboard's "Create Channel" button.
-  // Channels are never created silently by the tick loop anymore; this is
-  // the only path that creates one, and it always happens as a direct
-  // result of someone clicking a button, with a name tied to the specific
-  // server it's for (a guild's status/log channels can hold servers
-  // belonging to different agent owners, so a generic name would be
-  // ambiguous about whose server is whose).
+  // Explicit creation -- the dashboard's "Create" buttons. Status channels
+  // are never created silently by the tick loop; this is the only path
+  // that creates one, always as a direct result of clicking a button, with
+  // a name tied to the specific server it's for (a guild's status
+  // channels can hold servers belonging to different agent owners, so a
+  // generic name would be ambiguous about whose server is whose). Log
+  // channels are automatic instead (ensureLogChannel in index.js) -- not
+  // handled here at all.
   app.post('/dashboard/servers/:agentId/:serverId/channels', async (req, res) => {
     const { agentId, serverId } = req.params;
     const session = requireOwnedAgent(req, res, agentId);
     if (!session) return;
 
-    const { guildId, kind, label } = req.body || {};
-    if (typeof guildId !== 'string' || (kind !== 'status' && kind !== 'log')) {
-      return res.status(400).json({ success: false, error: 'guildId and a valid kind ("status" or "log") are required.' });
+    const { guildId, kind, label, categoryId } = req.body || {};
+    if (typeof guildId !== 'string' || (kind !== 'status' && kind !== 'category')) {
+      return res.status(400).json({ success: false, error: 'guildId and a valid kind ("status" or "category") are required.' });
     }
 
     const guild = client.guilds.cache.get(guildId);
@@ -397,9 +403,22 @@ function createWebServer({ config, client, notify, auditLog, agentRegistry }) {
       return res.status(404).json({ success: false, error: 'You are not a member of that guild.' });
     }
 
-    const name = `${slugForChannel(label || 'server')}-${kind}`;
     try {
-      const created = await guild.channels.create({ name, type: ChannelType.GuildText, reason: `Palworld ${kind} channel` });
+      if (kind === 'category') {
+        const created = await guild.channels.create({ name: 'Palworld Servers', type: ChannelType.GuildCategory, reason: 'Palworld status category' });
+        return res.json({ success: true, id: created.id, name: created.name });
+      }
+
+      // kind === 'status' -- a category groups multiple servers' status
+      // channels together (possibly from different agent owners) without
+      // combining them into one channel; each server still always gets
+      // its own.
+      const opts = { name: `${slugForChannel(label || 'server')}-status`, type: ChannelType.GuildText, reason: 'Palworld status channel' };
+      if (typeof categoryId === 'string' && categoryId.trim()) {
+        const parent = await guild.channels.fetch(categoryId).catch(() => null);
+        if (parent && parent.type === ChannelType.GuildCategory) opts.parent = categoryId;
+      }
+      const created = await guild.channels.create(opts);
       res.json({ success: true, id: created.id, name: created.name });
     } catch (err) {
       res.status(502).json({ success: false, error: `Failed to create channel: ${err.message}` });

@@ -189,10 +189,29 @@
       h('input', { type: 'text', id: 'serverLabel', value: isEdit ? existingData.label : serverLabel })
     );
 
-    // No more "auto-create" option -- creating a channel is an explicit
-    // action (the button below), since a guild's status/log channels can
-    // hold servers from several different agent owners and a silent
-    // background create wouldn't know whose server it's even for.
+    // Log channel is fully automatic now (ensureLogChannel in index.js
+    // creates one "palworld-logs" channel per guild; every server's
+    // events land there unless someone hand-edits a per-server override
+    // into servers.json directly) -- no dashboard UI for it at all.
+    //
+    // Status channel stays explicit: a "Create" button, never automatic,
+    // since a guild's status channels can hold servers from several
+    // different agent owners and a silent background create wouldn't know
+    // whose server it's even for. Servers no longer share one combined
+    // channel -- each always gets its own, optionally grouped together
+    // under a category (a Discord channel folder) so a guild with many
+    // servers stays organized instead of cluttering the channel list.
+    const categoryRow = h('div', { className: 'form-row' },
+      h('label', null, 'Status Category (optional, groups servers together)'),
+      h('div', { style: 'display:flex;gap:0.5rem;' },
+        h('select', { id: 'statusCategorySelect', style: 'flex:1;' },
+          h('option', { value: '' }, 'None'),
+          h('option', { value: '__loading__', disabled: 'true' }, 'Loading categories…')
+        ),
+        h('button', { type: 'button', className: 'btn btn-secondary btn-sm', onClick: () => createChannel('category') }, '+ Create Category')
+      )
+    );
+
     const statusRow = h('div', { className: 'form-row' },
       h('label', null, 'Status Channel'),
       h('div', { style: 'display:flex;gap:0.5rem;' },
@@ -204,31 +223,30 @@
       )
     );
 
-    const logRow = h('div', { className: 'form-row' },
-      h('label', null, 'Log Channel'),
-      h('div', { style: 'display:flex;gap:0.5rem;' },
-        h('select', { id: 'logChannelSelect', style: 'flex:1;' },
-          h('option', { value: '' }, 'None / Disabled'),
-          h('option', { value: '__loading__', disabled: 'true' }, 'Loading channels…')
-        ),
-        h('button', { type: 'button', className: 'btn btn-secondary btn-sm', onClick: () => createChannel('log') }, '+ Create')
-      )
-    );
-
-    // Creates a channel immediately (POST .../channels) and selects it in
-    // the relevant dropdown -- the user still has to hit Save/Attach to
-    // actually persist the choice, same as picking an existing channel.
+    // Creates a channel/category immediately (POST .../channels) and
+    // selects it in the relevant dropdown -- the user still has to hit
+    // Save/Attach to actually persist the status channel choice, same as
+    // picking an existing one. A newly-created status channel nests under
+    // whichever category is currently selected, if any.
     async function createChannel(kind) {
       const guildId = isEdit ? existingData.guildId : document.getElementById('guildSelect').value;
       if (!guildId) { showBanner(panel, 'Select a guild first.', 'error'); return; }
       const label = document.getElementById('serverLabel').value.trim() || serverLabel || 'server';
+      const categoryId = document.getElementById('statusCategorySelect')?.value || undefined;
       try {
         const result = await api('/dashboard/servers/' + agentId + '/' + serverId + '/channels', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guildId, kind, label }),
+          body: JSON.stringify({ guildId, kind, label, categoryId }),
         });
-        const sel = document.getElementById(kind === 'status' ? 'statusChannelSelect' : 'logChannelSelect');
+        if (kind === 'category') {
+          const sel = document.getElementById('statusCategorySelect');
+          const opt = h('option', { value: result.id }, result.name);
+          sel.append(opt);
+          sel.value = result.id;
+          return;
+        }
+        const sel = document.getElementById('statusChannelSelect');
         const opt = h('option', { value: result.id }, '#' + result.name);
         sel.append(opt);
         sel.value = result.id;
@@ -273,6 +291,7 @@
       try {
         const res = await api('/dashboard/guilds/' + guildId + '/resources');
         const channels = res.channels || [];
+        const categories = res.categories || [];
         const roles = res.roles || [];
 
         const statusSel = document.getElementById('statusChannelSelect');
@@ -284,13 +303,11 @@
           statusSel.append(opt);
         });
 
-        const logSel = document.getElementById('logChannelSelect');
-        logSel.innerHTML = '';
-        logSel.append(h('option', { value: '' }, 'None / Disabled'));
-        channels.forEach(c => {
-          const opt = h('option', { value: c.id }, '#' + c.name);
-          if (isEdit && existingData.logChannelId === c.id) opt.selected = true;
-          logSel.append(opt);
+        const catSel = document.getElementById('statusCategorySelect');
+        catSel.innerHTML = '';
+        catSel.append(h('option', { value: '' }, 'None'));
+        categories.forEach(c => {
+          catSel.append(h('option', { value: c.id }, c.name));
         });
 
         const adminCon = document.getElementById('adminRoleContainer');
@@ -328,7 +345,11 @@
             common: { roleIds: commonRoles, userIds: commonUserIds },
           },
           statusChannelId: (document.getElementById('statusChannelSelect').value && document.getElementById('statusChannelSelect').value !== '__loading__') ? document.getElementById('statusChannelSelect').value : null,
-          logChannelId: (document.getElementById('logChannelSelect').value && document.getElementById('logChannelSelect').value !== '__loading__') ? document.getElementById('logChannelSelect').value : null,
+          // logChannelId is intentionally omitted -- log channels are
+          // automatic now (see the comment above categoryRow), so the
+          // dashboard never sends this field. The backend preserves
+          // whatever's already there when a field is left out of the
+          // request body entirely.
         };
         try {
           await api('/dashboard/servers/' + agentId + '/' + serverId + '/guilds', {
@@ -345,7 +366,7 @@
       h('button', { className: 'btn btn-secondary', onClick: () => panel.remove() }, 'Cancel')
     );
 
-    panel.append(guildRow, labelRow, statusRow, logRow, adminGroup, opGroup, commonGroup, actions);
+    panel.append(guildRow, labelRow, categoryRow, statusRow, adminGroup, opGroup, commonGroup, actions);
     card.append(panel);
 
     if (isEdit) {

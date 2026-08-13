@@ -19,19 +19,25 @@ function writeJsonArray(filePath, entries) {
   fs.writeFileSync(filePath, JSON.stringify(entries, null, 2));
 }
 
-function loadGuildsFile(guildsPath) {
-  if (!guildsPath) return [];
-  return readJsonArray(guildsPath).map((guild) => ({ guildId: guild.guildId }));
+function normalizeRoles(roles) {
+  return {
+    admin: normalizeTier(roles?.admin),
+    operator: normalizeTier(roles?.operator),
+    common: normalizeTier(roles?.common),
+  };
 }
 
-function loadRolesFile(rolesPath) {
-  if (!rolesPath) return [];
-  return readJsonArray(rolesPath).map((entry) => ({
-    guildId: entry.guildId,
-    admin: normalizeTier(entry.admin),
-    operator: normalizeTier(entry.operator),
-    common: normalizeTier(entry.common),
-  }));
+// guilds.json and roles.json used to be separate files, each duplicating
+// the same "one entry per guild" shape servers.json already has. Now
+// there's just servers.json, and these two derive the same flat shapes
+// findGuildRoles()/the pm2-restart-broadcast loop already expect, so
+// nothing downstream of loadConfig() has to change.
+function guildsFromServers(servers) {
+  return servers.map((s) => ({ guildId: s.guildId }));
+}
+
+function rolesFromServers(servers) {
+  return servers.map((s) => ({ guildId: s.guildId, ...s.roles }));
 }
 
 // Each guild's Palworld connection(s) -- a guild can list zero, one, or many
@@ -93,6 +99,10 @@ function loadServersFile(serversPath) {
     // denials, /operator grants) -- per-server events use each server's own
     // logChannelId instead. Hand-set by editing this file directly.
     botLogChannelId: entry.botLogChannelId || null,
+    // Guild-wide admin/operator/common role grants (was roles.json) -- the
+    // fallback tier check for commands that don't target a specific server,
+    // and what /operator manages.
+    roles: normalizeRoles(entry.roles),
     servers: Array.isArray(entry.servers) ? entry.servers.map(normalizeServer) : [],
   }));
 }
@@ -185,54 +195,41 @@ function findGuildServer(servers, guildId, label) {
   return available.length === 1 ? available[0] : null;
 }
 
-// Registers a newly-seen guild across the config files with empty/no-op
-// defaults (no roles granted, no server to control) so the human only ever
-// has to *edit* values, never create the entries by hand. Returns true the
-// first time a guild is seen, false on every call after.
-function ensureGuildEntry(guildsPath, rolesPath, serversPath, guildId) {
-  if (guildsPath) {
-    const guilds = readJsonArray(guildsPath);
-    if (!guilds.some((g) => g.guildId === guildId)) {
-      writeJsonArray(guildsPath, [...guilds, { guildId }]);
-    }
-  }
+const EMPTY_ROLES = () => ({ admin: { roleIds: [], userIds: [] }, operator: { roleIds: [], userIds: [] }, common: { roleIds: [], userIds: [] } });
 
-  if (rolesPath) {
-    const roles = readJsonArray(rolesPath);
-    if (!roles.some((r) => r.guildId === guildId)) {
-      writeJsonArray(rolesPath, [
-        ...roles,
-        { guildId, admin: { roleIds: [], userIds: [] }, operator: { roleIds: [], userIds: [] }, common: { roleIds: [], userIds: [] } },
-      ]);
-    }
-  }
-
+// Registers a newly-seen guild in servers.json with empty/no-op defaults
+// (no roles granted, no server to control) so the human only ever has to
+// *edit* values, never create the entry by hand. Returns true the first
+// time a guild is seen, false on every call after.
+function ensureGuildEntry(serversPath, guildId) {
   const servers = readJsonArray(serversPath);
-  // ponytail: temporary diagnostic, see matching note in src/index.js.
+  // ponytail: temporary diagnostic for a data-loss bug, see matching note
+  // in src/index.js. Remove once the root cause is confirmed.
   console.log(`[diag] ensureGuildEntry guildId=${guildId} serversPath=${serversPath} readCount=${servers.length} match=${servers.some((s) => s.guildId === guildId)}`);
-  if (!servers.some((s) => s.guildId === guildId)) {
-    writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, botLogChannelId: null, servers: [] }]);
-    return true;
-  }
+  if (servers.some((s) => s.guildId === guildId)) return false;
 
-  return false;
+  writeJsonArray(serversPath, [...servers, { guildId, statusChannelId: null, botLogChannelId: null, roles: EMPTY_ROLES(), servers: [] }]);
+  return true;
 }
 
-// Reads roles.json, applies `mutate` to the (guild-specific) tier entry --
-// creating it with empty defaults first if this guild somehow isn't
-// registered yet -- and writes the result straight back. Used by the
-// /operator command so admins can grant/revoke access from Discord instead
-// of editing config/roles.json over SSH.
-function mutateGuildRoles(rolesPath, guildId, mutate) {
-  const roles = loadRolesFile(rolesPath);
-  let entry = roles.find((r) => r.guildId === guildId);
+// Reads servers.json, applies `mutate` to one guild's roles sub-object --
+// creating both the guild entry and its roles with empty defaults first if
+// either is somehow missing -- and writes the result straight back. Used
+// by the /operator command so admins can grant/revoke access from Discord
+// instead of hand-editing config/servers.json. `mutate` receives the flat
+// {admin, operator, common} shape directly, same as when this read from a
+// separate roles.json.
+function mutateGuildRoles(serversPath, guildId, mutate) {
+  const servers = readJsonArray(serversPath);
+  let entry = servers.find((s) => s.guildId === guildId);
   if (!entry) {
-    entry = { guildId, admin: { roleIds: [], userIds: [] }, operator: { roleIds: [], userIds: [] }, common: { roleIds: [], userIds: [] } };
-    roles.push(entry);
+    entry = { guildId, statusChannelId: null, botLogChannelId: null, roles: EMPTY_ROLES(), servers: [] };
+    servers.push(entry);
   }
-  mutate(entry);
-  writeJsonArray(rolesPath, roles);
-  return entry;
+  if (!entry.roles) entry.roles = EMPTY_ROLES();
+  mutate(entry.roles);
+  writeJsonArray(serversPath, servers);
+  return entry.roles;
 }
 
 // Reads servers.json, applies `mutate` to one guild's top-level entry, and
@@ -267,30 +264,28 @@ function mutateServerEntry(serversPath, guildId, label, mutate) {
 
 function loadConfig(env = process.env) {
   const configDir = env.CONFIG_DIR || path.join(__dirname, '..', 'config');
-  const guildsPath = env.GUILDS_CONFIG_PATH || path.join(configDir, 'guilds.json');
-  const rolesPath = env.ROLES_CONFIG_PATH || path.join(configDir, 'roles.json');
   const serversPath = env.SERVERS_CONFIG_PATH || path.join(configDir, 'servers.json');
   const agentsPath = env.AGENTS_STORE_PATH || path.join(__dirname, '..', 'data', 'agents.json');
+
+  const servers = loadServersFile(serversPath);
 
   return {
     discordToken: env.DISCORD_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
     auditLogPath: env.AUDIT_LOG_PATH || path.join(__dirname, '..', 'data', 'audit-log.json'),
-    guildsPath,
-    rolesPath,
     serversPath,
     agentsPath,
-    guilds: loadGuildsFile(guildsPath),
-    roles: loadRolesFile(rolesPath),
-    servers: loadServersFile(serversPath),
+    guilds: guildsFromServers(servers),
+    roles: rolesFromServers(servers),
+    servers,
   };
 }
 
 module.exports = {
   loadConfig,
-  loadGuildsFile,
-  loadRolesFile,
   loadServersFile,
+  guildsFromServers,
+  rolesFromServers,
   findGuildServer,
   findGuildServers,
   allCompleteServers,

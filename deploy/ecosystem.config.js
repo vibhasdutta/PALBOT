@@ -42,6 +42,10 @@ module.exports = {
       node_args: '--env-file=.env',
       autorestart: true,
       max_memory_restart: '250M',
+      // error_file and out_file pointing at the same path merges stdout
+      // and stderr into one combined log instead of splitting them.
+      error_file: path.join(repoRoot, 'logs', 'palworld-bot.log'),
+      out_file: path.join(repoRoot, 'logs', 'palworld-bot.log'),
     },
     {
       name: 'palworld-agent',
@@ -50,6 +54,8 @@ module.exports = {
       node_args: '--env-file=.env',
       autorestart: true,
       max_memory_restart: '250M',
+      error_file: path.join(repoRoot, 'agent', 'logs', 'palworld-agent.log'),
+      out_file: path.join(repoRoot, 'agent', 'logs', 'palworld-agent.log'),
     },
   ],
 };

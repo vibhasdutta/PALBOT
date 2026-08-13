@@ -4,8 +4,8 @@ const { Client, GatewayIntentBits, Events, REST, Routes, Options, ChannelType } 
 const {
   loadConfig,
   ensureGuildEntry,
-  loadGuildsFile,
-  loadRolesFile,
+  guildsFromServers,
+  rolesFromServers,
   loadServersFile,
   findGuildServer,
   findGuildServers,
@@ -96,9 +96,12 @@ function resolveServerCtx(guildId, label) {
   // so module-scope auditLog.appendAuditEntry above can route it to
   // notify.serverLog instead of notify.botLog -- command handlers keep
   // calling ctx.auditLog.appendAuditEntry({guildId, ...}) exactly as they
-  // do today, unaware this wrapper exists.
+  // do today, unaware this wrapper exists. guildId is attached here too --
+  // findGuildServer's own server objects don't carry it, but
+  // notify.serverLog needs it to fall back to the guild's bot-wide log
+  // channel when the server has no explicit logChannelId override.
   const scopedAuditLog = server ? {
-    appendAuditEntry: (entry) => auditLog.appendAuditEntry({ ...entry, server }),
+    appendAuditEntry: (entry) => auditLog.appendAuditEntry({ ...entry, server: { ...server, guildId } }),
   } : null;
 
   if (server) {
@@ -192,12 +195,12 @@ async function ensureLogChannel(guildId) {
 }
 
 async function onboardGuild(guildId, guildName) {
-  const added = ensureGuildEntry(config.guildsPath, config.rolesPath, config.serversPath, guildId);
+  const added = ensureGuildEntry(config.serversPath, guildId);
   if (added) {
-    config.guilds = loadGuildsFile(config.guildsPath);
-    config.roles = loadRolesFile(config.rolesPath);
     config.servers = loadServersFile(config.serversPath);
-    console.log(`Joined "${guildName}" (${guildId}) — added stub entries to config/roles.json and config/servers.json. This guild cannot control any Palworld server until config/servers.json is filled in for it.`);
+    config.guilds = guildsFromServers(config.servers);
+    config.roles = rolesFromServers(config.servers);
+    console.log(`Joined "${guildName}" (${guildId}) — added a stub entry to config/servers.json. This guild cannot control any Palworld server until config/servers.json is filled in for it.`);
   }
   await ensureLogChannel(guildId);
 
@@ -209,17 +212,19 @@ async function onboardGuild(guildId, guildName) {
   }
 }
 
-// ponytail: watch the directory, not each file directly — editors like nano/vim
+// ponytail: watch the directory, not the file directly — editors like nano/vim
 // replace the file on save (write temp + rename), which breaks a watch held on
 // the original inode. Debounced since a single save can fire multiple events.
 function watchConfigFiles() {
-  const dir = path.dirname(config.guildsPath); // guilds/roles/servers all live in config/
+  const dir = path.dirname(config.serversPath);
   fs.mkdirSync(dir, { recursive: true });
 
   const reloaders = {
-    [path.basename(config.guildsPath)]: () => { config.guilds = loadGuildsFile(config.guildsPath); },
-    [path.basename(config.rolesPath)]: () => { config.roles = loadRolesFile(config.rolesPath); },
-    [path.basename(config.serversPath)]: () => { config.servers = loadServersFile(config.serversPath); },
+    [path.basename(config.serversPath)]: () => {
+      config.servers = loadServersFile(config.serversPath);
+      config.guilds = guildsFromServers(config.servers);
+      config.roles = rolesFromServers(config.servers);
+    },
   };
 
   const debounceTimers = {};

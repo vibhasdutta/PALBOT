@@ -6,3 +6,4 @@ config/
 codegraph-cache/
 tests/
 docs/
+logs/

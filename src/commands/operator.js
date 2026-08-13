@@ -54,7 +54,7 @@ async function execute(interaction, ctx) {
   const listKey = isRoleAction ? 'roleIds' : 'userIds';
 
   try {
-    mutateGuildRoles(ctx.config.rolesPath, guildId, (entry) => {
+    mutateGuildRoles(ctx.config.serversPath, guildId, (entry) => {
       const list = entry.operator[listKey];
       if (isAdd) {
         if (!list.includes(target.id)) list.push(target.id);
